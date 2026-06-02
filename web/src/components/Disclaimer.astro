@@ -1,0 +1,36 @@
+---
+// Site-wide "unofficial" status banner. Always present so the nominative use
+// of the Microsoft Sentinel trademark across the app cannot be mistaken for
+// official Microsoft guidance. Wording mirrors the m365profiles pattern,
+// adjusted for Sentinel cost/ingestion estimation.
+---
+
+<div class="disclaimer" role="note">
+  <strong>Unofficial.</strong> Independent community helper — not a Microsoft product, not endorsed by
+  Microsoft. Cost figures are planning estimates from public list pricing; verify Microsoft Sentinel
+  pricing and entitlements with your Microsoft account team. The Microsoft Product Terms and Azure pricing
+  are the source of truth.
+</div>
+
+<style>
+  .disclaimer {
+    background: #2a1f0f;
+    color: #fbd38d;
+    border-bottom: 1px solid #5a3f1f;
+    padding: 0.6rem 1.25rem;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    text-align: center;
+  }
+  .disclaimer strong {
+    color: #fde2b0;
+  }
+  :global([data-theme="light"]) .disclaimer {
+    background: #fff4ce;
+    color: #5a3e08;
+    border-bottom-color: #f0d896;
+  }
+  :global([data-theme="light"]) .disclaimer strong {
+    color: #4a3306;
+  }
+</style>
