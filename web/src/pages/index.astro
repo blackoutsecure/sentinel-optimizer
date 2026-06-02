@@ -1,0 +1,54 @@
+---
+import Base from "../layouts/Base.astro";
+import ThemeToggle from "../components/ThemeToggle.tsx";
+import Optimizer from "../components/Optimizer.tsx";
+---
+
+<Base>
+  <header class="site-header">
+    <div class="container">
+      <a class="brand" href="/">
+        <span class="dot"></span>
+        Sentinel&nbsp;Optimizer
+      </a>
+      <div class="header-actions">
+        <a class="btn btn-ghost btn-sm" href="https://github.com/blackoutsecure/sentinel-optimizer" rel="noopener">
+          GitHub
+        </a>
+        <ThemeToggle client:load />
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero">
+      <div class="container">
+        <h1>Cut your SIEM bill with <span class="grad">clear, private analysis</span></h1>
+        <p>
+          Paste an export from Microsoft Sentinel, Splunk, or Elastic — or estimate from your
+          infrastructure inventory. See ingestion by source, model your Sentinel cost, and get
+          prioritized savings recommendations. Your raw data never leaves your browser.
+        </p>
+        <div class="badges">
+          <span class="badge"><span class="ic">●</span> 100% client-side parsing</span>
+          <span class="badge"><span class="ic">●</span> Sentinel · Splunk · Elastic</span>
+          <span class="badge"><span class="ic">●</span> Cost model + charts</span>
+          <span class="badge"><span class="ic">●</span> Optional AI summary</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="container">
+      <Optimizer client:load />
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <span>© {new Date().getFullYear()} BlackOut Secure · Sentinel Optimizer</span>
+      <span class="muted">
+        Estimates use public list pricing for planning only — not a quote.
+      </span>
+    </div>
+  </footer>
+</Base>

@@ -1,0 +1,27 @@
+{
+  "name": "sentinel-optimizer-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Interactive, zero-trust web app for the Sentinel Optimizer engine — paste/upload SIEM exports, walk an inventory wizard, model Microsoft Sentinel cost, and get recommendations. All parsing runs client-side.",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "typecheck": "astro check"
+  },
+  "dependencies": {
+    "@astrojs/react": "^3.6.2",
+    "astro": "^4.16.18",
+    "chart.js": "^4.4.7",
+    "react": "^18.3.1",
+    "react-chartjs-2": "^5.2.0",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.4",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "typescript": "^5.6.3"
+  }
+}
