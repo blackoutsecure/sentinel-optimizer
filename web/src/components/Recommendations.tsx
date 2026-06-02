@@ -1,15 +1,22 @@
-import { useState } from "react";
 import type { NormalizedResult } from "@engine/schema/normalization.js";
 import type { SentinelCostEstimate, SentinelCostInput } from "@engine/pricing/sentinelPricing.js";
 import { generateRecommendations, totalSavings, type Recommendation } from "../lib/recommendations.js";
-import { buildSummary, requestAiSummary } from "../lib/aiClient.js";
 import { money } from "../lib/format.js";
+
+export interface AiState {
+  text: string | null;
+  model?: string;
+  state: "idle" | "loading" | "error";
+  error: string | null;
+}
 
 interface Props {
   result: NormalizedResult;
   cost: SentinelCostEstimate;
   input: SentinelCostInput;
   vendorLabel: string;
+  ai: AiState;
+  onEnhance: () => void;
 }
 
 const SEV_LABEL: Record<Recommendation["severity"], string> = {
@@ -18,38 +25,9 @@ const SEV_LABEL: Record<Recommendation["severity"], string> = {
   low: "Low",
 };
 
-export default function Recommendations({ result, cost, input, vendorLabel }: Props) {
+export default function Recommendations({ result, cost, input, ai, onEnhance }: Props) {
   const recs = generateRecommendations({ result, cost, input });
   const savings = totalSavings(recs);
-
-  const [aiText, setAiText] = useState<string | null>(null);
-  const [aiModel, setAiModel] = useState<string | undefined>(undefined);
-  const [aiState, setAiState] = useState<"idle" | "loading" | "error">("idle");
-  const [aiError, setAiError] = useState<string | null>(null);
-
-  async function enhance() {
-    setAiState("loading");
-    setAiError(null);
-    const summary = buildSummary({
-      vendor: vendorLabel,
-      totalGbPerDay: result.totals?.gbPerDay ?? 0,
-      sources: result.sources,
-      monthlyCost: cost.monthlyCost,
-      breakdown: cost.breakdown as unknown as Record<string, number>,
-      billableAnalyticsGbPerDay: cost.billableAnalyticsGbPerDay,
-      benefitGbPerDay: cost.benefitGbPerDay,
-      recommendations: recs,
-    });
-    try {
-      const out = await requestAiSummary(summary);
-      setAiText(out.text);
-      setAiModel(out.model);
-      setAiState("idle");
-    } catch (e) {
-      setAiError((e as Error).message);
-      setAiState("error");
-    }
-  }
 
   return (
     <div className="stack">
@@ -85,19 +63,19 @@ export default function Recommendations({ result, cost, input, vendorLabel }: Pr
           <button
             type="button"
             className="btn btn-secondary btn-sm"
-            onClick={enhance}
-            disabled={aiState === "loading"}
+            onClick={onEnhance}
+            disabled={ai.state === "loading"}
           >
-            {aiState === "loading" ? "Generating…" : aiText ? "Regenerate" : "Enhance with AI"}
+            {ai.state === "loading" ? "Generating…" : ai.text ? "Regenerate" : "Enhance with AI"}
           </button>
         </div>
         <p className="ai-note">
           Optional. Sends only aggregated totals (GB/day, cost categories, recommendation titles) —
           never your raw logs.
         </p>
-        {aiState === "error" && aiError && <div className="error-box">{aiError}</div>}
-        {aiText && <div className="ai-body">{aiText}</div>}
-        {aiText && aiModel && <p className="ai-note">Model: {aiModel}</p>}
+        {ai.state === "error" && ai.error && <div className="error-box">{ai.error}</div>}
+        {ai.text && <div className="ai-body">{ai.text}</div>}
+        {ai.text && ai.model && <p className="ai-note">Model: {ai.model}</p>}
       </div>
     </div>
   );

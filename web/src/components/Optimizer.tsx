@@ -3,16 +3,20 @@ import type { NormalizedResult } from "@engine/schema/normalization.js";
 import type { SentinelCostInput } from "@engine/pricing/sentinelPricing.js";
 import { estimateMonthlyCost } from "@engine/pricing/index.js";
 import type { Vendor } from "../lib/examples.js";
+import { buildSummary, requestAiSummary } from "../lib/aiClient.js";
+import { generateRecommendations } from "../lib/recommendations.js";
 import DataInput from "./DataInput.js";
 import InventoryWizard from "./InventoryWizard.js";
 import CostControls from "./CostControls.js";
 import ResultsDashboard from "./ResultsDashboard.js";
 import { SourceBreakdownChart, CostBreakdownChart } from "./Charts.js";
-import Recommendations from "./Recommendations.js";
+import Recommendations, { type AiState } from "./Recommendations.js";
+import ExportBar from "./ExportBar.js";
 
 type Mode = "paste" | "wizard";
 
 const BASE_INPUT: SentinelCostInput = { analyticsGbPerDay: 0 };
+const IDLE_AI: AiState = { text: null, state: "idle", error: null };
 
 export default function Optimizer() {
   const [mode, setMode] = useState<Mode>("paste");
@@ -20,10 +24,12 @@ export default function Optimizer() {
   const [result, setResult] = useState<NormalizedResult | null>(null);
   const [vendorLabel, setVendorLabel] = useState("Microsoft Sentinel");
   const [costInput, setCostInput] = useState<SentinelCostInput>(BASE_INPUT);
+  const [ai, setAi] = useState<AiState>(IDLE_AI);
 
   function adoptResult(r: NormalizedResult, label: string) {
     setResult(r);
     setVendorLabel(label);
+    setAi(IDLE_AI);
     setCostInput((prev) => ({ ...prev, analyticsGbPerDay: r.totals?.gbPerDay ?? 0 }));
   }
 
@@ -34,6 +40,38 @@ export default function Optimizer() {
 
   function patchInput(patch: Partial<SentinelCostInput>) {
     setCostInput((prev) => ({ ...prev, ...patch }));
+  }
+
+  async function enhance() {
+    if (!result || !cost) return;
+    setAi((prev) => ({ ...prev, state: "loading", error: null }));
+    const recs = generateRecommendations({ result, cost, input: costInput });
+    const summary = buildSummary({
+      vendor: vendorLabel,
+      totalGbPerDay: result.totals?.gbPerDay ?? 0,
+      sources: result.sources,
+      monthlyCost: cost.monthlyCost,
+      breakdown: cost.breakdown as unknown as Record<string, number>,
+      billableAnalyticsGbPerDay: cost.billableAnalyticsGbPerDay,
+      benefitGbPerDay: cost.benefitGbPerDay,
+      recommendations: recs,
+    });
+    try {
+      const out = await requestAiSummary(summary);
+      setAi({ text: out.text, ...(out.model ? { model: out.model } : {}), state: "idle", error: null });
+    } catch (e) {
+      setAi((prev) => ({ ...prev, state: "error", error: (e as Error).message }));
+    }
+  }
+
+  function reset() {
+    setMode("paste");
+    setVendor("sentinel");
+    setResult(null);
+    setVendorLabel("Microsoft Sentinel");
+    setCostInput(BASE_INPUT);
+    setAi(IDLE_AI);
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   return (
@@ -96,11 +134,11 @@ export default function Optimizer() {
               <span className="eyebrow">3 · Visualize</span>
             </div>
             <div className="grid-2">
-              <div className="panel panel-pad">
+              <div className="panel panel-pad" id="export-chart-sources">
                 <h3>Ingest by source</h3>
                 <SourceBreakdownChart result={result} />
               </div>
-              <div className="panel panel-pad">
+              <div className="panel panel-pad" id="export-chart-cost">
                 <h3>Cost by category</h3>
                 <CostBreakdownChart breakdown={cost.breakdown} />
               </div>
@@ -114,6 +152,22 @@ export default function Optimizer() {
                 cost={cost}
                 input={costInput}
                 vendorLabel={vendorLabel}
+                ai={ai}
+                onEnhance={enhance}
+              />
+            </div>
+          </section>
+
+          <section className="section">
+            <div className="panel panel-pad">
+              <ExportBar
+                result={result}
+                cost={cost}
+                input={costInput}
+                vendorLabel={vendorLabel}
+                aiSummary={ai.text}
+                {...(ai.model ? { aiModel: ai.model } : {})}
+                onReset={reset}
               />
             </div>
           </section>
