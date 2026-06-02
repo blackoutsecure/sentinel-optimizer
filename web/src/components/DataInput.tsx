@@ -1,7 +1,12 @@
 import { useRef, useState } from "react";
 import type { NormalizedResult } from "@engine/schema/normalization.js";
-import { parseSentinel, parseSplunk, parseElastic } from "@engine/parsers/index.js";
-import { VENDORS, type Vendor } from "../lib/examples.js";
+import {
+  parseSentinel,
+  parseSplunk,
+  parseElastic,
+  parseGeneric,
+} from "@engine/parsers/index.js";
+import { VENDORS, type Vendor, type VendorMeta } from "../lib/examples.js";
 
 interface Props {
   vendor: Vendor;
@@ -9,21 +14,33 @@ interface Props {
   onParsed: (result: NormalizedResult, vendorLabel: string) => void;
 }
 
-function parseFor(vendor: Vendor, raw: string): NormalizedResult {
+/** Wrap a bare array of rows into the envelope a bespoke parser expects. */
+function envelope(json: unknown, key: string): Record<string, unknown> {
+  if (Array.isArray(json)) return { [key]: json };
+  return json as Record<string, unknown>;
+}
+
+function parseFor(meta: VendorMeta, raw: string): NormalizedResult {
   const json = JSON.parse(raw) as unknown;
-  switch (vendor) {
+  switch (meta.parser) {
     case "sentinel":
-      return parseSentinel(json as Parameters<typeof parseSentinel>[0]);
+      return parseSentinel(envelope(json, "usage") as Parameters<typeof parseSentinel>[0]);
     case "splunk":
-      return parseSplunk(json as Parameters<typeof parseSplunk>[0]);
+      return parseSplunk(envelope(json, "results") as Parameters<typeof parseSplunk>[0]);
     case "elastic":
-      return parseElastic(json as Parameters<typeof parseElastic>[0]);
+      return parseElastic(envelope(json, "indices") as Parameters<typeof parseElastic>[0]);
+    case "generic":
+      return parseGeneric(json as Parameters<typeof parseGeneric>[0], {
+        vendor: meta.id,
+        avgEventBytes: meta.avgEventBytes,
+      });
   }
 }
 
 export default function DataInput({ vendor, onVendorChange, onParsed }: Props) {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const meta = VENDORS.find((v) => v.id === vendor)!;
 
@@ -35,7 +52,7 @@ export default function DataInput({ vendor, onVendorChange, onParsed }: Props) {
       return;
     }
     try {
-      const result = parseFor(vendor, trimmed);
+      const result = parseFor(meta, trimmed);
       if (!result.sources.length) {
         setError("Parsed successfully, but found no data sources. Check the export format.");
         return;
@@ -49,6 +66,16 @@ export default function DataInput({ vendor, onVendorChange, onParsed }: Props) {
   function loadExample() {
     setText(meta.example);
     setError(null);
+  }
+
+  async function copyQuery() {
+    try {
+      await navigator.clipboard.writeText(meta.query);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setError("Couldn't access the clipboard — select the query text and copy manually.");
+    }
   }
 
   function onFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -68,8 +95,8 @@ export default function DataInput({ vendor, onVendorChange, onParsed }: Props) {
   return (
     <div className="stack">
       <div className="field">
-        <label htmlFor="vendor">SIEM / data source</label>
-        <div className="segmented" role="tablist" aria-label="Source SIEM">
+        <label>SIEM / data source</label>
+        <div className="segmented segmented-wrap" role="tablist" aria-label="Source SIEM">
           {VENDORS.map((v) => (
             <button
               key={v.id}
@@ -80,6 +107,7 @@ export default function DataInput({ vendor, onVendorChange, onParsed }: Props) {
               onClick={() => {
                 onVendorChange(v.id);
                 setError(null);
+                setCopied(false);
               }}
             >
               {v.label}
@@ -89,7 +117,24 @@ export default function DataInput({ vendor, onVendorChange, onParsed }: Props) {
       </div>
 
       <div className="field">
-        <label htmlFor="paste">Paste query results (JSON)</label>
+        <div className="query-head">
+          <label htmlFor="query">
+            <span className="step-pill">A</span> Run this in {meta.label}
+            <span className="query-lang">{meta.queryLang}</span>
+          </label>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={copyQuery}>
+            {copied ? "Copied ✓" : "Copy query"}
+          </button>
+        </div>
+        <pre id="query" className="code-block" aria-label={`${meta.label} query`}>
+          <code>{meta.query}</code>
+        </pre>
+      </div>
+
+      <div className="field">
+        <label htmlFor="paste">
+          <span className="step-pill">B</span> Paste the JSON results
+        </label>
         <p className="ai-note">{meta.hint}</p>
         <textarea
           id="paste"

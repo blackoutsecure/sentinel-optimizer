@@ -18,3 +18,6 @@ export type { SplunkInput, SplunkUsageRow } from "./splunk.js";
 
 export { parseElastic } from "./elastic.js";
 export type { ElasticInput, ElasticCatIndexRow } from "./elastic.js";
+
+export { parseGeneric } from "./generic.js";
+export type { GenericInput, GenericRow, GenericParseOptions } from "./generic.js";

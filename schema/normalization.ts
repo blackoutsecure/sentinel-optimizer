@@ -16,6 +16,9 @@ export type Vendor =
   | "exabeam"
   | "logrhythm"
   | "arcticwolf"
+  | "rapid7"
+  | "logscale"
+  | "datadog"
   | "sentinel";
 
 /** A single log source / index / table reported by a vendor. */
