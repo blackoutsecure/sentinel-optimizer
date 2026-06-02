@@ -1,0 +1,8 @@
+{
+  "windowDays": 30,
+  "indices": [
+    { "index": "logs-2026.05", "docs.count": "12500000", "store.size": "21474836480" },
+    { "index": "metrics-2026.05", "docs.count": "8000000", "store.size": "5368709120" },
+    { "index": "audit-2026.05", "docs.count": "450000" }
+  ]
+}

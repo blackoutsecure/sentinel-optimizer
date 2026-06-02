@@ -1,0 +1,12 @@
+{
+  "windowDays": 30,
+  "usage": [
+    { "DataType": "SecurityEvent", "QuantityMB": 1228800 },
+    { "DataType": "SigninLogs", "QuantityMB": 307200 },
+    { "DataType": "CommonSecurityLog", "QuantityMB": 921600 }
+  ],
+  "connectors": [
+    { "name": "AzureActiveDirectory", "kind": "AzureActiveDirectory", "enabled": true },
+    { "name": "MicrosoftThreatProtection", "kind": "MicrosoftThreatProtection", "enabled": false }
+  ]
+}

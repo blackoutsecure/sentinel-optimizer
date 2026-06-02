@@ -1,0 +1,8 @@
+{
+  "windowDays": 30,
+  "results": [
+    { "idx": "main", "bytes": 32212254720, "events": 48000000 },
+    { "idx": "firewall", "bytes": 16106127360, "events": 21000000 },
+    { "idx": "windows", "bytes": 8053063680 }
+  ]
+}

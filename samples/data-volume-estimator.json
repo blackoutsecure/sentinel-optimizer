@@ -1,0 +1,10 @@
+{
+  "rows": [
+    { "name": "Azure AD Audit (Users)", "count": 5000 },
+    { "name": "Azure AD Sign-ins (Users)", "count": 5000 },
+    { "name": "Windows Servers w/ medium EPS", "count": 200 },
+    { "name": "Linux / Unix Servers", "count": 150 },
+    { "name": "Network Firewalls (DMZ)", "count": 4 },
+    { "name": "Network IPS/IDS", "count": 6 }
+  ]
+}

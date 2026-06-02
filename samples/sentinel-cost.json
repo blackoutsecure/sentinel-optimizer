@@ -1,0 +1,11 @@
+{
+  "analyticsGbPerDay": 500,
+  "dataLakeGbPerDay": 2000,
+  "interactiveRetentionMonths": 3,
+  "dataStorageMonths": 12,
+  "searchTbPerMonth": 500,
+  "benefits": {
+    "m365E5FreeGbPerDay": 50,
+    "defenderP2FreeGbPerDay": 30
+  }
+}
