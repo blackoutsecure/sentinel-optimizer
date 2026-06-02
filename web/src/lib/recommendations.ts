@@ -104,24 +104,36 @@ export function generateRecommendations(ctx: RecommendationContext): Recommendat
     }
   }
 
-  // 3) M365 E5 / Defender benefits not applied.
+  // 3a) Microsoft 365 E5 free-ingestion benefit not applied.
   const benefits = input.benefits ?? {};
-  const appliedBenefit =
-    (benefits.m365E5FreeGbPerDay ?? 0) +
-    (benefits.defenderP2FreeGbPerDay ?? 0) +
-    (benefits.freeDataSourceGbPerDay ?? 0);
-  const looksMicrosoft = sources.some((s) =>
-    /(securityevent|signinlogs|audit|office|azureactivity|defender)/i.test(s.name),
+  const hasM365 = sources.some((s) =>
+    /(signinlogs|auditlogs|officeactivity|office365|microsoft365|\baad\b|entra|emailevents|cloudappevents)/i.test(
+      s.name,
+    ),
   );
-  if (appliedBenefit === 0 && looksMicrosoft && totalGbPerDay > 0) {
-    // Illustrative: 5 MB/user/day for an estimated user base is unknown here,
-    // so suggest enabling and surface the per-GB value.
+  if ((benefits.m365E5FreeGbPerDay ?? 0) === 0 && hasM365 && totalGbPerDay > 0) {
     recs.push({
-      id: "benefits",
+      id: "benefit-e5",
       severity: "med",
-      title: "Apply free-ingestion benefits (M365 E5 / Defender for Servers)",
+      title: "Apply the Microsoft 365 E5 free-ingestion benefit",
       detail:
-        "Microsoft 365 E5/A5/F5/G5 grants ~5 MB/user/day of free Sentinel ingestion, and Defender for Servers P2 grants 500 MB/node/day. Enter your eligible grant in the cost controls to subtract it from billable volume.",
+        "Microsoft 365 E5/A5/F5/G5 (and standalone Entra ID P2) grants ~5 MB/user/day of free Microsoft Sentinel ingestion. Multiply your eligible user count by 5 MB/day and enter the result under “M365 E5 (GB/day)” in the cost controls to subtract it from billable volume.",
+    });
+  }
+
+  // 3b) Defender for Servers Plan 2 free-ingestion benefit not applied.
+  const hasServerSecurity = sources.some((s) =>
+    /(securityevent|windowsfirewall|windowsevent|securitybaseline|securitydetection|protectionstatus|updatesummary|\bupdate\b|mdcfileintegrity|securityalert)/i.test(
+      s.name,
+    ),
+  );
+  if ((benefits.defenderP2FreeGbPerDay ?? 0) === 0 && hasServerSecurity && totalGbPerDay > 0) {
+    recs.push({
+      id: "benefit-defender-servers",
+      severity: "med",
+      title: "Apply the Defender for Servers Plan 2 free-ingestion benefit",
+      detail:
+        "Defender for Servers Plan 2 grants 500 MB/node/day of free ingestion into eligible security tables (SecurityEvent, WindowsFirewall, WindowsEvent, ProtectionStatus, Update/UpdateSummary, SecurityBaseline, and more). The allowance is pooled per subscription (nodes × 500 MB). Use the KQL helper in the cost controls to size it, then enter the result under “Defender Servers P2 (GB/day)”.",
     });
   }
 
