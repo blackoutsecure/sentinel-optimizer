@@ -40,18 +40,77 @@ Usage
 | extend Nodes = nodes, CapGBPerDay = round(nodes * 500.0 / 1024.0, 3)
 | extend FreeGBPerDay = min_of(EligibleGBPerDay, CapGBPerDay)`;
 
+/**
+ * KQL helper to size the Microsoft 365 E5/A5/F5/G5 benefit. The offer grants up
+ * to 5 MB/user/day of free Sentinel ingestion across a fixed set of eligible
+ * Microsoft data types, so the effective grant is min(eligible ingest,
+ * E5 users × 5 MB). Run in Log Analytics, set e5Users, and paste FreeGBPerDay
+ * into the "M365 E5 (GB/day)" field.
+ * Offer + eligible data types: https://azure.microsoft.com/offers/sentinel-microsoft-365-offer/
+ */
+const M365_E5_QUERY = `// Microsoft 365 E5/A5/F5/G5 benefit — up to 5 MB/user/day of free Sentinel ingestion.
+// Eligible Microsoft data types per the offer; grant = min(eligible ingest, users x 5 MB).
+let lookback = 7d;
+let e5Users = 0;  // <-- your assigned E5/A5/F5/G5 user count (see the license query below)
+let eligible = dynamic([
+  "SigninLogs","AuditLogs","AADNonInteractiveUserSignInLogs","AADServicePrincipalSignInLogs",
+  "AADManagedIdentitySignInLogs","AADProvisioningLogs","ADFSSignInLogs","AADUserRiskEvents",
+  "AADRiskyUsers","OfficeActivity","McasShadowItReporting","InformationProtectionLogs_CL",
+  "DeviceEvents","DeviceFileEvents","DeviceImageLoadEvents","DeviceInfo","DeviceLogonEvents",
+  "DeviceNetworkEvents","DeviceNetworkInfo","DeviceProcessEvents","DeviceRegistryEvents",
+  "DeviceFileCertificateInfo","EmailEvents","EmailUrlInfo","EmailAttachmentInfo","EmailPostDeliveryEvents"]);
+Usage
+| where TimeGenerated > ago(lookback) and IsBillable == true
+| where DataType in (eligible)
+| summarize GB = sum(Quantity) / 1024.0 by bin(TimeGenerated, 1d)
+| summarize EligibleGBPerDay = round(avg(GB), 3)
+| extend CapGBPerDay = round(e5Users * 5.0 / 1024.0, 3)
+| extend FreeGBPerDay = iff(e5Users > 0, min_of(EligibleGBPerDay, CapGBPerDay), EligibleGBPerDay)`;
+
+/**
+ * Microsoft Graph (PowerShell) helper to count assigned E5/A5/F5/G5 licenses,
+ * which sets the 5 MB/user/day cap above. Licenses live in Entra ID, not in
+ * Log Analytics, so this runs separately from the KQL helpers.
+ */
+const M365_E5_LICENSE_QUERY = `# Count users with an eligible Microsoft 365 E5/A5/F5/G5 license assigned.
+# Microsoft Graph PowerShell — needs delegated User.Read.All + Organization.Read.All.
+Connect-MgGraph -Scopes "User.Read.All","Organization.Read.All"
+# Eligible SKU part numbers — adjust to match your tenant's plans:
+$eligible = @("SPE_E5","ENTERPRISEPREMIUM","SPE_F5_SECCOMP","M365_F5_SECURITY",
+  "M365EDU_A5_FACULTY","M365EDU_A5_STUUSEBNFT","Microsoft_365_G5")
+$skuIds = (Get-MgSubscribedSku | Where-Object { $_.SkuPartNumber -in $eligible }).SkuId
+(Get-MgUser -All -Property assignedLicenses |
+  Where-Object { $_.AssignedLicenses.SkuId | Where-Object { $_ -in $skuIds } } |
+  Measure-Object).Count`;
+
+/**
+ * KQL helper to measure always-free Microsoft Sentinel data sources, so the
+ * volume can be excluded from billable estimates. Free sources per
+ * https://learn.microsoft.com/azure/sentinel/billing#free-data-sources
+ */
+const FREE_SOURCES_QUERY = `// Always-free Microsoft Sentinel data sources (not charged for ingestion).
+// Azure Activity, Sentinel Health, Office 365 audit, and security alerts/incidents.
+let lookback = 7d;
+let freeTypes = dynamic([
+  "AzureActivity","SentinelHealth","OfficeActivity","SecurityAlert","SecurityIncident"]);
+Usage
+| where TimeGenerated > ago(lookback)
+| where DataType in (freeTypes)
+| summarize GB = sum(Quantity) / 1024.0 by bin(TimeGenerated, 1d)
+| summarize FreeGBPerDay = round(avg(GB), 3)`;
+
 export default function CostControls({ input, onChange }: Props) {
   const b = input.benefits ?? {};
   const perTable = input.tableRetention != null;
-  const [copied, setCopied] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   function setBenefit(patch: Partial<NonNullable<SentinelCostInput["benefits"]>>) {
     onChange({ benefits: { ...b, ...patch } });
   }
-  async function copyDefenderQuery() {
+  async function copyQuery(id: string, text: string) {
     try {
-      await navigator.clipboard.writeText(DEFENDER_P2_QUERY);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
+      await navigator.clipboard.writeText(text);
+      setCopiedId(id);
+      window.setTimeout(() => setCopiedId((c) => (c === id ? null : c)), 1600);
     } catch {
       /* clipboard unavailable — user can select the query text manually */
     }
@@ -177,6 +236,10 @@ export default function CostControls({ input, onChange }: Props) {
       <div className="section-head">
         <span className="eyebrow">Free-ingestion benefits</span>
       </div>
+      <p className="ai-note">
+        These grants reduce your billable Analytics volume. Enter a GB/day figure directly, or use
+        the matching query below to measure it in your own environment and paste the result.
+      </p>
       <div className="field-row">
         <div className="field">
           <label htmlFor="e5">M365 E5 (GB/day)</label>
@@ -214,6 +277,60 @@ export default function CostControls({ input, onChange }: Props) {
       </div>
 
       <details className="mt-sm">
+        <summary>Size the Microsoft 365 E5 benefit</summary>
+        <p className="ai-note">
+          The Microsoft Sentinel benefit for Microsoft 365 E5/A5/F5/G5 customers grants up to
+          5 MB/user/day of free Sentinel ingestion across a fixed set of eligible Microsoft data
+          types (Microsoft Entra ID logs, Microsoft 365/Office activity, Defender XDR &amp; Defender
+          for Endpoint raw data, Defender for Cloud Apps Shadow IT, and Information Protection). The
+          effective grant is the smaller of that eligible volume and your eligible user count ×
+          5 MB. Enter the GB/day above, or run this query and paste its <code>FreeGBPerDay</code>{" "}
+          result.
+        </p>
+        <div className="query-head">
+          <span className="query-lang">KQL</span>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => copyQuery("e5", M365_E5_QUERY)}
+          >
+            {copiedId === "e5" ? "Copied ✓" : "Copy query"}
+          </button>
+        </div>
+        <pre className="code-block" aria-label="Microsoft 365 E5 benefit query">
+          <code>{M365_E5_QUERY}</code>
+        </pre>
+        <p className="ai-note">
+          Don't know your eligible user count? Run this Microsoft Graph (PowerShell) query to total
+          the assigned E5/A5/F5/G5 licenses, then set <code>e5Users</code> above.
+        </p>
+        <div className="query-head">
+          <span className="query-lang">PowerShell</span>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => copyQuery("e5lic", M365_E5_LICENSE_QUERY)}
+          >
+            {copiedId === "e5lic" ? "Copied ✓" : "Copy query"}
+          </button>
+        </div>
+        <pre className="code-block" aria-label="Microsoft 365 E5 license-count query">
+          <code>{M365_E5_LICENSE_QUERY}</code>
+        </pre>
+        <p className="ai-note">
+          Offer terms and eligible data types per Microsoft's{" "}
+          <a
+            href="https://azure.microsoft.com/offers/sentinel-microsoft-365-offer/"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Microsoft Sentinel benefit for Microsoft 365 E5 customers
+          </a>
+          .
+        </p>
+      </details>
+
+      <details className="mt-sm">
         <summary>Size the Defender for Servers Plan 2 benefit</summary>
         <p className="ai-note">
           Defender for Servers Plan 2 grants 500 MB/node/day of free ingestion into eligible
@@ -222,8 +339,12 @@ export default function CostControls({ input, onChange }: Props) {
         </p>
         <div className="query-head">
           <span className="query-lang">KQL</span>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={copyDefenderQuery}>
-            {copied ? "Copied ✓" : "Copy query"}
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => copyQuery("def", DEFENDER_P2_QUERY)}
+          >
+            {copiedId === "def" ? "Copied ✓" : "Copy query"}
           </button>
         </div>
         <pre className="code-block" aria-label="Defender for Servers P2 benefit query">
@@ -237,6 +358,40 @@ export default function CostControls({ input, onChange }: Props) {
             rel="noopener noreferrer"
           >
             data ingestion benefit
+          </a>{" "}
+          documentation.
+        </p>
+      </details>
+
+      <details className="mt-sm">
+        <summary>Measure always-free data sources</summary>
+        <p className="ai-note">
+          Some sources are never charged for ingestion — Azure Activity, Microsoft Sentinel Health,
+          Office 365 audit logs, and security alerts/incidents. Run this query to total their volume
+          so you can exclude it, then enter the result above. (Raw Defender/Entra logs are still
+          paid — only the alerts and listed types are free.)
+        </p>
+        <div className="query-head">
+          <span className="query-lang">KQL</span>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => copyQuery("free", FREE_SOURCES_QUERY)}
+          >
+            {copiedId === "free" ? "Copied ✓" : "Copy query"}
+          </button>
+        </div>
+        <pre className="code-block" aria-label="Always-free data sources query">
+          <code>{FREE_SOURCES_QUERY}</code>
+        </pre>
+        <p className="ai-note">
+          Free data sources per Microsoft's{" "}
+          <a
+            href="https://learn.microsoft.com/azure/sentinel/billing#free-data-sources"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Sentinel billing
           </a>{" "}
           documentation.
         </p>

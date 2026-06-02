@@ -117,7 +117,7 @@ export function generateRecommendations(ctx: RecommendationContext): Recommendat
       severity: "med",
       title: "Apply the Microsoft 365 E5 free-ingestion benefit",
       detail:
-        "Microsoft 365 E5/A5/F5/G5 (and standalone Entra ID P2) grants ~5 MB/user/day of free Microsoft Sentinel ingestion. Multiply your eligible user count by 5 MB/day and enter the result under “M365 E5 (GB/day)” in the cost controls to subtract it from billable volume.",
+        "The Microsoft Sentinel benefit for Microsoft 365 E5/A5/F5/G5 customers grants up to 5 MB/user/day of free Sentinel ingestion across eligible Microsoft data types (Microsoft Entra ID logs, Microsoft 365/Office activity, Defender XDR & Defender for Endpoint raw data, Defender for Cloud Apps Shadow IT, and Information Protection). The grant is the lesser of that eligible volume and your eligible user count × 5 MB/day. Use the “Size the Microsoft 365 E5 benefit” query in the cost controls to measure it, then enter the result under “M365 E5 (GB/day)”.",
     });
   }
 
