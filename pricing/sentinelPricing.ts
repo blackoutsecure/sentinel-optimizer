@@ -9,11 +9,14 @@
  */
 
 import { type NormalizedResult } from "../schema/normalization.js";
+import { ratesForRegion } from "./regions.js";
 
 /** Configurable pricing rates. Defaults are public list prices (USD). */
 export interface SentinelRates {
   /** Analytics (Log Analytics) ingestion, per GB. */
   analyticsIngestPerGb: number;
+  /** Basic / Auxiliary logs ingestion, per GB (cheaper tier, limited query/retention). */
+  basicIngestPerGb: number;
   /** Data Lake ingestion, per GB (lower-cost tier; override per region/plan). */
   dataLakeIngestPerGb: number;
   /** Interactive retention beyond the free window, per GB per month. */
@@ -38,6 +41,7 @@ export interface SentinelRates {
 
 export const DEFAULT_SENTINEL_RATES: SentinelRates = {
   analyticsIngestPerGb: 0.15,
+  basicIngestPerGb: 0.05,
   dataLakeIngestPerGb: 0.1,
   interactiveRetentionPerGbMonth: 0.12,
   freeInteractiveRetentionMonths: 3,
@@ -60,15 +64,45 @@ export interface SentinelBenefits {
   freeDataSourceGbPerDay?: number;
 }
 
+/**
+ * Per-table (per-source) retention configuration. Sentinel lets each table set
+ * its own retention, so high-value tables can be kept longer while noisy tables
+ * are trimmed. The Analytics free interactive window is 90 days (~3 months).
+ *
+ * Docs: https://learn.microsoft.com/azure/sentinel/manage-data-overview
+ */
+export interface TableRetention {
+  /** Table / source name (ideally matches a NormalizedResult source). */
+  name: string;
+  /** Daily ingest for this table, GB/day. */
+  gbPerDay: number;
+  /** Total interactive retention, months. Default 3 (90 days, free with Sentinel). */
+  interactiveMonths?: number;
+  /**
+   * Total retention including long-term archive, months. Months beyond the
+   * interactive window are billed at the long-term storage rate. Default =
+   * interactiveMonths (no archive).
+   */
+  totalMonths?: number;
+}
+
 export interface SentinelCostInput {
   /** Analytics (Log Analytics) ingestion, GB/day. */
   analyticsGbPerDay: number;
+  /** Azure region / datacenter for pricing (drives region-aware rates). */
+  regionId?: string;
   /** Data Lake ingestion, GB/day. */
   dataLakeGbPerDay?: number;
   /** Total interactive retention window in months. Defaults to the free window. */
   interactiveRetentionMonths?: number;
   /** Long-term storage retention in months. Defaults to 12. */
   dataStorageMonths?: number;
+  /**
+   * Per-table retention overrides. When provided (non-empty), interactive
+   * retention and long-term storage are computed per table instead of from the
+   * aggregate `interactiveRetentionMonths` / `dataStorageMonths` window.
+   */
+  tableRetention?: TableRetention[];
   /** Data searched against long-term storage, TB/month. */
   searchTbPerMonth?: number;
   /** SOAR (Logic Apps) actions per month. */
@@ -105,6 +139,10 @@ export interface SentinelCostEstimate {
   benefitGbPerDay: number;
   /** Estimated monthly value of the applied benefits. */
   estimatedMonthlyBenefitValue: number;
+  /** The fully-resolved rate table used for this estimate (region-adjusted). */
+  rates: SentinelRates;
+  /** The region id these rates were resolved for, if any. */
+  regionId?: string;
 }
 
 function round2(n: number): number {
@@ -117,7 +155,10 @@ function clamp(n: number, min: number, max: number): number {
 
 /** Estimate the monthly Sentinel cost from ingestion volume and options. */
 export function estimateMonthlyCost(input: SentinelCostInput): SentinelCostEstimate {
-  const rates: SentinelRates = { ...DEFAULT_SENTINEL_RATES, ...input.rates };
+  const regionRates = input.regionId
+    ? ratesForRegion(input.regionId)
+    : DEFAULT_SENTINEL_RATES;
+  const rates: SentinelRates = { ...regionRates, ...input.rates };
 
   const benefits = input.benefits ?? {};
   const benefitGbPerDay = Math.max(
@@ -141,18 +182,40 @@ export function estimateMonthlyCost(input: SentinelCostInput): SentinelCostEstim
 
   const interactiveMonths =
     input.interactiveRetentionMonths ?? rates.freeInteractiveRetentionMonths;
-  const paidInteractiveMonths = Math.max(
-    0,
-    interactiveMonths - rates.freeInteractiveRetentionMonths,
-  );
-  const interactiveRetention =
-    totalAnalyticsMonthlyGb * paidInteractiveMonths * rates.interactiveRetentionPerGbMonth;
-
   const storageMonths = input.dataStorageMonths ?? 12;
-  const dataStorage =
-    (totalAnalyticsMonthlyGb + dataLakeMonthlyGb) *
-    storageMonths *
-    rates.dataStoragePerGbMonth;
+
+  let interactiveRetention: number;
+  let dataStorage: number;
+
+  const perTable = input.tableRetention?.filter((t) => (t.gbPerDay ?? 0) > 0) ?? [];
+  if (perTable.length > 0) {
+    // Per-table retention: each table sets its own interactive + total window.
+    let interactive = 0;
+    let archive = 0;
+    for (const t of perTable) {
+      const monthlyGb = Math.max(0, t.gbPerDay) * rates.daysPerMonth;
+      const tInteractive = t.interactiveMonths ?? rates.freeInteractiveRetentionMonths;
+      const tTotal = Math.max(t.totalMonths ?? tInteractive, tInteractive);
+      const paidInteractive = Math.max(0, tInteractive - rates.freeInteractiveRetentionMonths);
+      const archiveMonths = Math.max(0, tTotal - tInteractive);
+      interactive += monthlyGb * paidInteractive * rates.interactiveRetentionPerGbMonth;
+      archive += monthlyGb * archiveMonths * rates.dataStoragePerGbMonth;
+    }
+    interactiveRetention = interactive;
+    dataStorage = archive;
+  } else {
+    // Aggregate retention across all Analytics + Data Lake volume.
+    const paidInteractiveMonths = Math.max(
+      0,
+      interactiveMonths - rates.freeInteractiveRetentionMonths,
+    );
+    interactiveRetention =
+      totalAnalyticsMonthlyGb * paidInteractiveMonths * rates.interactiveRetentionPerGbMonth;
+    dataStorage =
+      (totalAnalyticsMonthlyGb + dataLakeMonthlyGb) *
+      storageMonths *
+      rates.dataStoragePerGbMonth;
+  }
 
   const dataSearch = Math.max(0, input.searchTbPerMonth ?? 0) * rates.dataSearchPerTb;
 
@@ -195,6 +258,8 @@ export function estimateMonthlyCost(input: SentinelCostInput): SentinelCostEstim
     estimatedMonthlyBenefitValue: round2(
       benefitGbPerDay * rates.daysPerMonth * rates.analyticsIngestPerGb,
     ),
+    rates,
+    ...(input.regionId ? { regionId: input.regionId } : {}),
   };
 }
 

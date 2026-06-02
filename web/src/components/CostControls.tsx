@@ -14,6 +14,7 @@ function num(v: string): number | undefined {
 
 export default function CostControls({ input, onChange }: Props) {
   const b = input.benefits ?? {};
+  const perTable = input.tableRetention != null;
   function setBenefit(patch: Partial<NonNullable<SentinelCostInput["benefits"]>>) {
     onChange({ benefits: { ...b, ...patch } });
   }
@@ -62,6 +63,7 @@ export default function CostControls({ input, onChange }: Props) {
             id="iret"
             type="number"
             min={0}
+            disabled={perTable}
             value={input.interactiveRetentionMonths ?? ""}
             placeholder="3 (free)"
             onChange={(e) => onChange({ interactiveRetentionMonths: num(e.target.value) })}
@@ -73,12 +75,16 @@ export default function CostControls({ input, onChange }: Props) {
             id="store"
             type="number"
             min={0}
+            disabled={perTable}
             value={input.dataStorageMonths ?? ""}
             placeholder="12"
             onChange={(e) => onChange({ dataStorageMonths: num(e.target.value) })}
           />
         </div>
       </div>
+      {perTable && (
+        <p className="ai-note">Retention is managed per table below — these two are overridden.</p>
+      )}
 
       <div className="field-row">
         <div className="field">

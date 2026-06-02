@@ -2,12 +2,15 @@ import { useMemo, useState } from "react";
 import type { NormalizedResult } from "@engine/schema/normalization.js";
 import type { SentinelCostInput } from "@engine/pricing/sentinelPricing.js";
 import { estimateMonthlyCost } from "@engine/pricing/index.js";
+import { DEFAULT_REGION_ID } from "@engine/pricing/regions.js";
 import type { Vendor } from "../lib/examples.js";
 import { buildSummary, requestAiSummary } from "../lib/aiClient.js";
 import { generateRecommendations } from "../lib/recommendations.js";
 import DataInput from "./DataInput.js";
 import InventoryWizard from "./InventoryWizard.js";
 import CostControls from "./CostControls.js";
+import RegionControls from "./RegionControls.js";
+import RetentionTable from "./RetentionTable.js";
 import ResultsDashboard from "./ResultsDashboard.js";
 import { SourceBreakdownChart, CostBreakdownChart } from "./Charts.js";
 import Recommendations, { type AiState } from "./Recommendations.js";
@@ -15,7 +18,7 @@ import ExportBar from "./ExportBar.js";
 
 type Mode = "paste" | "wizard";
 
-const BASE_INPUT: SentinelCostInput = { analyticsGbPerDay: 0 };
+const BASE_INPUT: SentinelCostInput = { analyticsGbPerDay: 0, regionId: DEFAULT_REGION_ID };
 const IDLE_AI: AiState = { text: null, state: "idle", error: null };
 
 export default function Optimizer() {
@@ -30,7 +33,11 @@ export default function Optimizer() {
     setResult(r);
     setVendorLabel(label);
     setAi(IDLE_AI);
-    setCostInput((prev) => ({ ...prev, analyticsGbPerDay: r.totals?.gbPerDay ?? 0 }));
+    setCostInput((prev) => ({
+      ...prev,
+      analyticsGbPerDay: r.totals?.gbPerDay ?? 0,
+      tableRetention: undefined,
+    }));
   }
 
   const cost = useMemo(() => {
@@ -121,11 +128,16 @@ export default function Optimizer() {
             </div>
             <div className="grid-2">
               <div className="panel panel-pad">
+                <RegionControls input={costInput} cost={cost} onChange={patchInput} />
+                <hr className="mt-sm" />
                 <CostControls input={costInput} onChange={patchInput} />
               </div>
               <div className="panel panel-pad">
                 <ResultsDashboard result={result} cost={cost} vendorLabel={vendorLabel} />
               </div>
+            </div>
+            <div className="panel panel-pad">
+              <RetentionTable result={result} input={costInput} onChange={patchInput} />
             </div>
           </section>
 

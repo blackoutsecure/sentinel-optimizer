@@ -16,4 +16,13 @@ export type {
   SentinelCostInput,
   SentinelCostBreakdown,
   SentinelCostEstimate,
+  TableRetention,
 } from "./sentinelPricing.js";
+export {
+  SENTINEL_REGIONS,
+  DEFAULT_REGION_ID,
+  regionById,
+  ratesForRegion,
+  cheapestRegion,
+} from "./regions.js";
+export type { SentinelRegion } from "./regions.js";
