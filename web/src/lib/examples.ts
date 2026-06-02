@@ -17,7 +17,10 @@ export type Vendor =
   | "sumologic"
   | "logscale"
   | "chronicle"
-  | "datadog";
+  | "datadog"
+  | "exabeam"
+  | "logrhythm"
+  | "arcticwolf";
 
 /** Which engine parser handles a vendor's paste. */
 export type ParserKind = "sentinel" | "splunk" | "elastic" | "generic";
@@ -89,6 +92,27 @@ ORDER BY bytes DESC`;
 const DATADOG_QUERY = `# Datadog · Logs > Usage (or Usage Metering API), last 30 days.
 # Export rows of { "source": <log source>, "gb": <ingested GB> }.
 # API: GET https://api.datadoghq.com/api/v2/usage/logs_by_retention`;
+
+const EXABEAM_QUERY = `// Exabeam (New-Scale / Security Operations Platform) · Search
+// Last 30 days, grouped by log source. If a message-size field is available
+// sum it; otherwise export per-source event counts (volume is then estimated).
+groupBy(log_source)
+| stats sum(message_size) as bytes, count() as events by log_source
+| sort bytes desc`;
+
+const LOGRHYTHM_QUERY = `-- LogRhythm · Web Console > Search (or LogRhythm DX / SIEM export)
+-- Last 30 days, per Log Source. LogRhythm is message-rate (MPS) based, so
+-- export message counts; volume is estimated at ~0.5 KB/message.
+SELECT LogSourceName AS name, COUNT(*) AS events
+FROM LogMart
+WHERE NormalDate >= DATEADD(day, -30, GETDATE())
+GROUP BY LogSourceName
+ORDER BY events DESC`;
+
+const ARCTICWOLF_QUERY = `# Arctic Wolf (MDR) — no customer query language. Request an ingestion report
+# from your Concierge Security Team, or export from the Arctic Wolf portal:
+#   Reports > Log Search / Data Ingestion > by log source, last 30 days.
+# Paste rows of { "name": <log source>, "bytes": <bytes over the window> }.`;
 
 /* ----------------------------------------------------------------- examples */
 
@@ -171,6 +195,33 @@ export const DATADOG_EXAMPLE = `{
     { "source": "cloudtrail", "gb": 540 },
     { "source": "nginx", "gb": 320 },
     { "source": "kubernetes", "gb": 210 }
+  ]
+}`;
+
+export const EXABEAM_EXAMPLE = `{
+  "windowDays": 30,
+  "results": [
+    { "log_source": "Windows Security", "bytes": 19327352832 },
+    { "log_source": "Okta", "bytes": 6442450944 },
+    { "log_source": "Zscaler", "bytes": 4294967296 }
+  ]
+}`;
+
+export const LOGRHYTHM_EXAMPLE = `{
+  "windowDays": 30,
+  "results": [
+    { "name": "Windows Security", "events": 210000000 },
+    { "name": "Cisco ASA", "events": 150000000 },
+    { "name": "Linux Syslog", "events": 42000000 }
+  ]
+}`;
+
+export const ARCTICWOLF_EXAMPLE = `{
+  "windowDays": 30,
+  "sources": [
+    { "name": "Firewall (Fortinet)", "bytes": 15032385536 },
+    { "name": "Microsoft 365", "bytes": 8589934592 },
+    { "name": "Windows Event Log", "bytes": 5368709120 }
   ]
 }`;
 
@@ -258,6 +309,34 @@ export const VENDORS: VendorMeta[] = [
     query: DATADOG_QUERY,
     hint: "Paste rows of { source, gb } of ingested volume by log source for the window.",
     example: DATADOG_EXAMPLE,
+  },
+  {
+    id: "exabeam",
+    label: "Exabeam",
+    parser: "generic",
+    queryLang: "Search · query",
+    hint: "Paste rows of { log_source, bytes } per source. No size field? Export per-source event counts instead.",
+    query: EXABEAM_QUERY,
+    example: EXABEAM_EXAMPLE,
+  },
+  {
+    id: "logrhythm",
+    label: "LogRhythm",
+    parser: "generic",
+    queryLang: "Web Console · Search",
+    hint: "Paste rows of { name, events } per log source. LogRhythm is message-based — volume is estimated at ~0.5 KB/message; refine in the cost model.",
+    query: LOGRHYTHM_QUERY,
+    example: LOGRHYTHM_EXAMPLE,
+    avgEventBytes: 512,
+  },
+  {
+    id: "arcticwolf",
+    label: "Arctic Wolf",
+    parser: "generic",
+    queryLang: "Portal export / report",
+    hint: "No query language — export an ingestion report from the portal (or ask your Concierge team) and paste rows of { name, bytes }.",
+    query: ARCTICWOLF_QUERY,
+    example: ARCTICWOLF_EXAMPLE,
   },
 ];
 
