@@ -100,3 +100,39 @@ export async function requestAiSummary(summary: AggregatedSummary, signal?: Abor
 function round(n: number): number {
   return Math.round(n * 100) / 100;
 }
+
+/**
+ * Ask the server to generate a realistic EXAMPLE paste for a vendor, shaped
+ * like that vendor's expected export. Sends only app-owned, non-sensitive
+ * strings (vendor label, schema hint, canonical template). Throws with a
+ * friendly message when AI isn't enabled so the UI can fall back to its
+ * built-in static example.
+ */
+export async function requestAiExample(
+  req: { vendor: string; label: string; schemaHint: string; template: string },
+  signal?: AbortSignal,
+): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetch("/api/example", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(req),
+      ...(signal ? { signal } : {}),
+    });
+  } catch {
+    throw new Error("Could not reach the AI service.");
+  }
+
+  if (res.status === 501 || res.status === 404) {
+    throw new Error("AI example generation isn't enabled for this deployment.");
+  }
+  if (!res.ok) {
+    throw new Error(`AI service returned an error (HTTP ${res.status}).`);
+  }
+
+  const data = (await res.json()) as { text?: string; error?: string };
+  if (data.error) throw new Error(data.error);
+  if (!data.text) throw new Error("AI service returned an empty example.");
+  return data.text;
+}

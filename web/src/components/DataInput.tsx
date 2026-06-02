@@ -7,6 +7,7 @@ import {
   parseGeneric,
 } from "@engine/parsers/index.js";
 import { VENDORS, type Vendor, type VendorMeta } from "../lib/examples.js";
+import { requestAiExample } from "../lib/aiClient.js";
 
 interface Props {
   vendor: Vendor;
@@ -41,6 +42,8 @@ export default function DataInput({ vendor, onVendorChange, onParsed }: Props) {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const meta = VENDORS.find((v) => v.id === vendor)!;
 
@@ -63,9 +66,26 @@ export default function DataInput({ vendor, onVendorChange, onParsed }: Props) {
     }
   }
 
-  function loadExample() {
-    setText(meta.example);
+  async function generateExample() {
     setError(null);
+    setNotice(null);
+    setGenerating(true);
+    try {
+      const text = await requestAiExample({
+        vendor: meta.id,
+        label: meta.label,
+        schemaHint: meta.hint,
+        template: meta.example,
+      });
+      setText(text);
+      setNotice(`Generated a sample ${meta.label} export with AI. Review, then Analyze.`);
+    } catch (e) {
+      // Graceful fallback: AI off or unreachable — drop in the built-in example.
+      setText(meta.example);
+      setNotice(`${(e as Error).message} Loaded the built-in ${meta.label} example instead.`);
+    } finally {
+      setGenerating(false);
+    }
   }
 
   async function copyQuery() {
@@ -108,6 +128,7 @@ export default function DataInput({ vendor, onVendorChange, onParsed }: Props) {
                 onVendorChange(v.id);
                 setError(null);
                 setCopied(false);
+                setNotice(null);
               }}
             >
               {v.label}
@@ -147,6 +168,7 @@ export default function DataInput({ vendor, onVendorChange, onParsed }: Props) {
       </div>
 
       {error && <div className="error-box">{error}</div>}
+      {notice && !error && <p className="ai-note">{notice}</p>}
 
       <div className="row">
         <button type="button" className="btn btn-primary" onClick={() => analyze(text)}>
@@ -155,8 +177,13 @@ export default function DataInput({ vendor, onVendorChange, onParsed }: Props) {
         <button type="button" className="btn btn-secondary" onClick={() => fileRef.current?.click()}>
           Upload file…
         </button>
-        <button type="button" className="btn btn-ghost" onClick={loadExample}>
-          Load example
+        <button
+          type="button"
+          className="btn btn-ghost"
+          onClick={generateExample}
+          disabled={generating}
+        >
+          {generating ? "Generating…" : "Generate example with AI"}
         </button>
         <input
           ref={fileRef}
