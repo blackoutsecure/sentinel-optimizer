@@ -35,9 +35,24 @@ export interface SentinelRates {
   securityCopilotPerScuMonth: number;
   /** Sentinel for SAP, per billable SID per month (plus ingestion). */
   sapPerSidMonth: number;
+  /** Commitment-tier options for Analytics ingestion. */
+  commitmentTiers: SentinelCommitmentTier[];
   /** Days per month used to convert per-day volume to per-month. */
   daysPerMonth: number;
 }
+
+/** Sentinel Analytics commitment tier definition. */
+export interface SentinelCommitmentTier {
+  /** Tier capacity in GB/day. */
+  gbPerDay: number;
+  /** Discount vs pay-as-you-go Analytics ingestion, 0..1. */
+  discountPct: number;
+  /** Optional display label. */
+  label?: string;
+}
+
+/** Commitment-tier modeling mode for Analytics ingestion. */
+export type CommitmentTierMode = "off" | "auto" | "manual";
 
 export const DEFAULT_SENTINEL_RATES: SentinelRates = {
   analyticsIngestPerGb: 0.15,
@@ -51,6 +66,17 @@ export const DEFAULT_SENTINEL_RATES: SentinelRates = {
   soarPerAction: 0.000015,
   securityCopilotPerScuMonth: 2900,
   sapPerSidMonth: 1400,
+  // Public tier pricing is region/offer-dependent; model as configurable
+  // discounts to support directional planning without hard-coding contracts.
+  commitmentTiers: [
+    { gbPerDay: 100, discountPct: 0.15, label: "100 GB/day" },
+    { gbPerDay: 200, discountPct: 0.2, label: "200 GB/day" },
+    { gbPerDay: 300, discountPct: 0.25, label: "300 GB/day" },
+    { gbPerDay: 500, discountPct: 0.3, label: "500 GB/day" },
+    { gbPerDay: 1000, discountPct: 0.35, label: "1 TB/day" },
+    { gbPerDay: 2000, discountPct: 0.4, label: "2 TB/day" },
+    { gbPerDay: 5000, discountPct: 0.5, label: "5 TB/day" },
+  ],
   daysPerMonth: 365 / 12,
 };
 
@@ -115,8 +141,44 @@ export interface SentinelCostInput {
   benefits?: SentinelBenefits;
   /** Weekend/holiday ingestion optimization, 0..1, applied to Analytics ingestion. */
   ingestionOptimizationPct?: number;
+  /** Commitment-tier modeling mode for Analytics ingestion. */
+  commitmentTierMode?: CommitmentTierMode;
+  /** Manual commitment tier selection (GB/day), used when mode is "manual". */
+  commitmentTierGbPerDay?: number;
   /** Rate overrides (region, currency, negotiated tiers). */
   rates?: Partial<SentinelRates>;
+}
+
+export interface SentinelCommitmentOption {
+  /** PAYG (null) or commitment tier in GB/day. */
+  tierGbPerDay: number | null;
+  /** Human-readable label. */
+  label: string;
+  /** Discount vs PAYG Analytics ingestion. */
+  discountPct: number;
+  /** Effective Analytics ingestion rate for this option. */
+  effectiveRatePerGb: number;
+  /** Estimated Analytics monthly cost under this option. */
+  analyticsMonthlyCost: number;
+  /** Estimated total monthly Sentinel cost under this option. */
+  estimatedMonthlyTotalCost: number;
+  /** Savings vs PAYG Analytics ingestion. */
+  estimatedMonthlySavingsVsPayg: number;
+  /** Tier utilization for commitment options; null for PAYG. */
+  utilizationPct: number | null;
+  /** Overage volume billed above tier capacity, GB/day. */
+  overageGbPerDay: number;
+  /** True when this is the selected pricing model option. */
+  selected: boolean;
+  /** True when this is the recommended tier-sized option. */
+  recommended: boolean;
+}
+
+export interface SentinelCommitmentModel {
+  mode: CommitmentTierMode;
+  recommendedTierGbPerDay?: number;
+  selectedTierGbPerDay?: number;
+  options: SentinelCommitmentOption[];
 }
 
 export interface SentinelCostBreakdown {
@@ -143,6 +205,8 @@ export interface SentinelCostEstimate {
   rates: SentinelRates;
   /** The region id these rates were resolved for, if any. */
   regionId?: string;
+  /** Commitment-tier modeling and ranked options. */
+  commitment?: SentinelCommitmentModel;
 }
 
 function round2(n: number): number {
@@ -151,6 +215,17 @@ function round2(n: number): number {
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
+}
+
+function sortedCommitmentTiers(tiers: SentinelCommitmentTier[]): SentinelCommitmentTier[] {
+  return [...tiers]
+    .filter((t) => t.gbPerDay > 0)
+    .sort((a, b) => a.gbPerDay - b.gbPerDay)
+    .map((t) => ({
+      ...t,
+      discountPct: clamp(t.discountPct, 0, 0.95),
+      ...(t.label ? {} : { label: `${t.gbPerDay} GB/day` }),
+    }));
 }
 
 /** Estimate the monthly Sentinel cost from ingestion volume and options. */
@@ -176,8 +251,9 @@ export function estimateMonthlyCost(input: SentinelCostInput): SentinelCostEstim
   const dataLakeMonthlyGb = Math.max(0, input.dataLakeGbPerDay ?? 0) * rates.daysPerMonth;
 
   const optPct = clamp(input.ingestionOptimizationPct ?? 0, 0, 1);
-  const analyticsIngestion =
+  const paygAnalyticsIngestion =
     billableAnalyticsMonthlyGb * rates.analyticsIngestPerGb * (1 - optPct);
+  let analyticsIngestion = paygAnalyticsIngestion;
   const dataLakeIngestion = dataLakeMonthlyGb * rates.dataLakeIngestPerGb;
 
   const interactiveMonths =
@@ -228,6 +304,82 @@ export function estimateMonthlyCost(input: SentinelCostInput): SentinelCostEstim
 
   const sap = Math.max(0, input.sapProductionSids ?? 0) * rates.sapPerSidMonth;
 
+  const commitmentMode = input.commitmentTierMode ?? "off";
+  const tierCandidates = sortedCommitmentTiers(rates.commitmentTiers);
+  const effectiveBillableAnalyticsGbPerDay = billableAnalyticsGbPerDay * (1 - optPct);
+  const minTierGb = tierCandidates[0]?.gbPerDay;
+  const recommendedTierGbPerDay =
+    minTierGb != null && effectiveBillableAnalyticsGbPerDay >= minTierGb
+      ? tierCandidates
+          .filter((t) => t.gbPerDay <= effectiveBillableAnalyticsGbPerDay)
+          .at(-1)?.gbPerDay
+      : undefined;
+
+  const selectedTierGbPerDay =
+    commitmentMode === "manual"
+      ? tierCandidates.find((t) => t.gbPerDay === input.commitmentTierGbPerDay)?.gbPerDay
+      : commitmentMode === "auto"
+        ? recommendedTierGbPerDay
+        : undefined;
+
+  if (selectedTierGbPerDay != null) {
+    const tier = tierCandidates.find((t) => t.gbPerDay === selectedTierGbPerDay);
+    if (tier) {
+      const tierRate = rates.analyticsIngestPerGb * (1 - tier.discountPct);
+      const billedMonthlyGb =
+        Math.max(effectiveBillableAnalyticsGbPerDay, tier.gbPerDay) * rates.daysPerMonth;
+      analyticsIngestion = billedMonthlyGb * tierRate;
+    }
+  }
+
+  const nonAnalyticsTotal =
+    dataLakeIngestion +
+    interactiveRetention +
+    dataStorage +
+    dataSearch +
+    soar +
+    securityCopilot +
+    sap;
+
+  const options: SentinelCommitmentOption[] = [
+    {
+      tierGbPerDay: null,
+      label: "PAYG (no commitment)",
+      discountPct: 0,
+      effectiveRatePerGb: round2(rates.analyticsIngestPerGb),
+      analyticsMonthlyCost: round2(paygAnalyticsIngestion),
+      estimatedMonthlyTotalCost: round2(paygAnalyticsIngestion + nonAnalyticsTotal),
+      estimatedMonthlySavingsVsPayg: 0,
+      utilizationPct: null,
+      overageGbPerDay: 0,
+      selected: selectedTierGbPerDay == null,
+      recommended: false,
+    },
+    ...tierCandidates.map((tier) => {
+      const tierRate = rates.analyticsIngestPerGb * (1 - tier.discountPct);
+      const billedDaily = Math.max(effectiveBillableAnalyticsGbPerDay, tier.gbPerDay);
+      const analyticsMonthly = billedDaily * rates.daysPerMonth * tierRate;
+      const savings = paygAnalyticsIngestion - analyticsMonthly;
+      const utilization =
+        tier.gbPerDay > 0 ? effectiveBillableAnalyticsGbPerDay / tier.gbPerDay : 0;
+      return {
+        tierGbPerDay: tier.gbPerDay,
+        label: tier.label ?? `${tier.gbPerDay} GB/day`,
+        discountPct: round2(tier.discountPct),
+        effectiveRatePerGb: round2(tierRate),
+        analyticsMonthlyCost: round2(analyticsMonthly),
+        estimatedMonthlyTotalCost: round2(analyticsMonthly + nonAnalyticsTotal),
+        estimatedMonthlySavingsVsPayg: round2(savings),
+        utilizationPct: round2(utilization),
+        overageGbPerDay: round2(
+          Math.max(0, effectiveBillableAnalyticsGbPerDay - tier.gbPerDay),
+        ),
+        selected: selectedTierGbPerDay === tier.gbPerDay,
+        recommended: recommendedTierGbPerDay === tier.gbPerDay,
+      } satisfies SentinelCommitmentOption;
+    }),
+  ];
+
   const breakdown: SentinelCostBreakdown = {
     analyticsIngestion: round2(analyticsIngestion),
     dataLakeIngestion: round2(dataLakeIngestion),
@@ -260,6 +412,12 @@ export function estimateMonthlyCost(input: SentinelCostInput): SentinelCostEstim
     ),
     rates,
     ...(input.regionId ? { regionId: input.regionId } : {}),
+    commitment: {
+      mode: commitmentMode,
+      ...(recommendedTierGbPerDay != null ? { recommendedTierGbPerDay } : {}),
+      ...(selectedTierGbPerDay != null ? { selectedTierGbPerDay } : {}),
+      options,
+    },
   };
 }
 

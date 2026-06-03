@@ -1,10 +1,19 @@
 import { useState } from "react";
 import type { SentinelCostInput } from "@engine/pricing/sentinelPricing.js";
-import { gbPerDay } from "../lib/format.js";
+import type { SentinelCostEstimate } from "@engine/pricing/sentinelPricing.js";
+import { DEFAULT_SENTINEL_RATES } from "@engine/pricing/index.js";
+import { gbPerDay, gb, money } from "../lib/format.js";
 
 interface Props {
   input: SentinelCostInput;
+  cost: SentinelCostEstimate;
   onChange: (patch: Partial<SentinelCostInput>) => void;
+}
+
+function rate(n: number): string {
+  if (n >= 1) return `$${n.toFixed(2)}`;
+  if (n >= 0.01) return `$${n.toFixed(3)}`;
+  return `$${n.toFixed(4)}`;
 }
 
 function num(v: string): number | undefined {
@@ -99,7 +108,7 @@ Usage
 | summarize GB = sum(Quantity) / 1024.0 by bin(TimeGenerated, 1d)
 | summarize FreeGBPerDay = round(avg(GB), 3)`;
 
-export default function CostControls({ input, onChange }: Props) {
+export default function CostControls({ input, cost, onChange }: Props) {
   const b = input.benefits ?? {};
   const perTable = input.tableRetention != null;
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -116,26 +125,21 @@ export default function CostControls({ input, onChange }: Props) {
     }
   }
 
+  const commitmentMode = input.commitmentTierMode ?? "off";
+  const commitmentTiers = DEFAULT_SENTINEL_RATES.commitmentTiers;
+  const dataLakeGbDay = Math.max(0, input.dataLakeGbPerDay ?? 0);
+  const dataLakeMonthlyGb = dataLakeGbDay * cost.rates.daysPerMonth;
+  const analyticsMonthlyGb = Math.max(0, input.analyticsGbPerDay) * cost.rates.daysPerMonth;
+
   return (
     <div className="stack">
       <div className="field">
-        <label>Analytics ingestion (from your data)</label>
-        <input type="text" readOnly value={gbPerDay(input.analyticsGbPerDay)} />
+        <label htmlFor="analytics-ingest-derived">Analytics ingestion (from your data)</label>
+        <input id="analytics-ingest-derived" type="text" readOnly value={gbPerDay(input.analyticsGbPerDay)} />
         <p className="ai-note">Derived from the parsed/estimated sources above.</p>
       </div>
 
       <div className="field-row">
-        <div className="field">
-          <label htmlFor="lake">Data Lake / Auxiliary (GB/day)</label>
-          <input
-            id="lake"
-            type="number"
-            min={0}
-            value={input.dataLakeGbPerDay ?? ""}
-            placeholder="0"
-            onChange={(e) => onChange({ dataLakeGbPerDay: num(e.target.value) })}
-          />
-        </div>
         <div className="field">
           <label htmlFor="opt">Ingestion optimization (%)</label>
           <input
@@ -151,6 +155,109 @@ export default function CostControls({ input, onChange }: Props) {
             }}
           />
         </div>
+      </div>
+
+      <div className="section-head">
+        <span className="eyebrow">Data Lake / Auxiliary pricing</span>
+      </div>
+      <div className="field">
+        <label htmlFor="lake">Data Lake / Auxiliary (GB/day)</label>
+        <input
+          id="lake"
+          type="number"
+          min={0}
+          value={input.dataLakeGbPerDay ?? ""}
+          placeholder="0"
+          onChange={(e) => onChange({ dataLakeGbPerDay: num(e.target.value) })}
+        />
+        <p className="ai-note">
+          Use this for lower-cost, lower-query-frequency logs that you do not need in full Analytics.
+        </p>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <caption className="sr-only">Backend ingestion pricing used by lane</caption>
+          <thead>
+            <tr>
+              <th>Lane</th>
+              <th className="num">Input GB/day</th>
+              <th className="num">Rate/GB</th>
+              <th className="num">Est. ingest/mo</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Analytics</td>
+              <td className="num">{gbPerDay(Math.max(0, input.analyticsGbPerDay))}</td>
+              <td className="num">{rate(cost.rates.analyticsIngestPerGb)}</td>
+              <td className="num">{money(cost.breakdown.analyticsIngestion)}</td>
+            </tr>
+            <tr>
+              <td>Data Lake / Auxiliary</td>
+              <td className="num">{gbPerDay(dataLakeGbDay)}</td>
+              <td className="num">{rate(cost.rates.dataLakeIngestPerGb)}</td>
+              <td className="num">{money(cost.breakdown.dataLakeIngestion)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p className="ai-note">
+        Backend pricing shown from the active regional rate card and current model inputs.
+        Source reference: {" "}
+        <a
+          href="https://www.microsoft.com.office.prod.abbvie.myshn.net/en-us/security/pricing/microsoft-sentinel#section-master-oc2d43"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Microsoft Sentinel pricing
+        </a>
+        . Current modeled monthly ingestion volume: {gb(analyticsMonthlyGb)} Analytics and {gb(dataLakeMonthlyGb)} Data Lake.
+      </p>
+
+      <div className="section-head">
+        <span className="eyebrow">Commitment tier modeling</span>
+      </div>
+      <div className="field-row">
+        <div className="field">
+          <label htmlFor="commitment-mode">Analytics pricing mode</label>
+          <select
+            id="commitment-mode"
+            value={commitmentMode}
+            onChange={(e) =>
+              onChange({
+                commitmentTierMode: e.target.value as SentinelCostInput["commitmentTierMode"],
+              })
+            }
+          >
+            <option value="off">PAYG (no commitment)</option>
+            <option value="auto">Auto-select commitment tier</option>
+            <option value="manual">Manual commitment tier</option>
+          </select>
+          <p className="ai-note">
+            Auto chooses the largest tier at or below your sustained billable daily volume.
+          </p>
+        </div>
+        {commitmentMode === "manual" && (
+          <div className="field">
+            <label htmlFor="commitment-tier">Commitment tier (GB/day)</label>
+            <select
+              id="commitment-tier"
+              value={input.commitmentTierGbPerDay ?? ""}
+              onChange={(e) =>
+                onChange({
+                  commitmentTierGbPerDay: e.target.value ? Number(e.target.value) : undefined,
+                })
+              }
+            >
+              <option value="">Select a tier</option>
+              {commitmentTiers.map((tier) => (
+                <option key={tier.gbPerDay} value={tier.gbPerDay}>
+                  {tier.label ?? `${tier.gbPerDay} GB/day`} ({Math.round(tier.discountPct * 100)}% discount)
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       <div className="field-row">

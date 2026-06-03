@@ -93,6 +93,33 @@ describe("estimateMonthlyCost", () => {
     expect(out.breakdown.analyticsIngestion).toBeCloseTo(expected, 2);
   });
 
+  it("builds commitment options including PAYG baseline", () => {
+    const out = estimateMonthlyCost({ analyticsGbPerDay: 250 });
+    expect(out.commitment).toBeDefined();
+    expect(out.commitment?.options[0]?.tierGbPerDay).toBeNull();
+    expect(out.commitment?.options.some((o) => o.tierGbPerDay === 100)).toBe(true);
+  });
+
+  it("auto-selects the right-sized commitment tier below sustained usage", () => {
+    const out = estimateMonthlyCost({ analyticsGbPerDay: 280, commitmentTierMode: "auto" });
+    expect(out.commitment?.recommendedTierGbPerDay).toBe(200);
+    expect(out.commitment?.selectedTierGbPerDay).toBe(200);
+    const selected = out.commitment?.options.find((o) => o.selected);
+    expect(selected?.tierGbPerDay).toBe(200);
+    expect(out.breakdown.analyticsIngestion).toBeCloseTo(selected?.analyticsMonthlyCost ?? 0, 2);
+  });
+
+  it("supports manual commitment tier selection", () => {
+    const out = estimateMonthlyCost({
+      analyticsGbPerDay: 320,
+      commitmentTierMode: "manual",
+      commitmentTierGbPerDay: 500,
+    });
+    expect(out.commitment?.selectedTierGbPerDay).toBe(500);
+    const selected = out.commitment?.options.find((o) => o.selected);
+    expect(selected?.tierGbPerDay).toBe(500);
+  });
+
   it("sums the breakdown into the monthly total", () => {
     const out = estimateMonthlyCost(sample as SentinelCostInput);
     const sum = Object.values(out.breakdown).reduce((a, b) => a + b, 0);

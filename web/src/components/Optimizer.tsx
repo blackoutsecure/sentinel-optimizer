@@ -130,10 +130,10 @@ export default function Optimizer() {
               <div className="panel panel-pad">
                 <RegionControls input={costInput} cost={cost} onChange={patchInput} />
                 <hr className="mt-sm" />
-                <CostControls input={costInput} onChange={patchInput} />
+                <CostControls input={costInput} cost={cost} onChange={patchInput} />
               </div>
               <div className="panel panel-pad">
-                <ResultsDashboard result={result} cost={cost} vendorLabel={vendorLabel} />
+                <ResultsDashboard result={result} cost={cost} input={costInput} vendorLabel={vendorLabel} />
               </div>
             </div>
             <div className="panel panel-pad">

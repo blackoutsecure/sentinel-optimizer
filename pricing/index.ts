@@ -11,6 +11,10 @@ export {
   DEFAULT_SENTINEL_RATES,
 } from "./sentinelPricing.js";
 export type {
+  SentinelCommitmentTier,
+  CommitmentTierMode,
+  SentinelCommitmentOption,
+  SentinelCommitmentModel,
   SentinelRates,
   SentinelBenefits,
   SentinelCostInput,

@@ -138,17 +138,31 @@ export function generateRecommendations(ctx: RecommendationContext): Recommendat
   }
 
   // 4) Commitment tier opportunity at scale.
-  if (monthlyGb >= 100 * rates.daysPerMonth) {
-    // ≥100 GB/day qualifies for Commitment Tiers (~15–60% off pay-as-you-go).
-    const savings = cost.breakdown.analyticsIngestion * 0.2;
-    recs.push({
-      id: "commitment",
-      severity: "high",
-      title: "Move to a Sentinel Commitment Tier",
-      detail:
-        "At ≥100 GB/day, Commitment (capacity reservation) Tiers discount ingestion vs. pay-as-you-go — commonly 15–60% depending on tier. Right-size the tier just below your sustained daily volume.",
-      monthlySavings: round(savings),
-    });
+  const commitment = cost.commitment;
+  const paygOption = commitment?.options.find((o) => o.tierGbPerDay == null);
+  const recommendedOption = commitment?.options.find((o) => o.recommended);
+  const selectedOption = commitment?.options.find((o) => o.selected);
+  if (monthlyGb >= 100 * rates.daysPerMonth && paygOption && recommendedOption) {
+    const savings = round(recommendedOption.estimatedMonthlySavingsVsPayg);
+    if ((input.commitmentTierMode ?? "off") === "off" && savings > 0) {
+      recs.push({
+        id: "commitment",
+        severity: "high",
+        title: "Move to a Sentinel Commitment Tier",
+        detail:
+          `Auto-modeling recommends ${recommendedOption.label} for this workload. Commitment pricing discounts Analytics ingestion vs PAYG; this estimate uses your current region rates and sustained volume to right-size just below daily usage.`,
+        monthlySavings: savings,
+      });
+    } else if (selectedOption && selectedOption.tierGbPerDay != null && savings > 0) {
+      recs.push({
+        id: "commitment-selected",
+        severity: "med",
+        title: `Commitment tier selected: ${selectedOption.label}`,
+        detail:
+          `Compared with PAYG, this tier is currently modeled to save ${selectedOption.estimatedMonthlySavingsVsPayg > 0 ? "about" : "up to"} ${Math.abs(selectedOption.estimatedMonthlySavingsVsPayg).toFixed(0)} USD per month. Review utilization and overage to keep this right-sized.`,
+        monthlySavings: round(Math.max(0, selectedOption.estimatedMonthlySavingsVsPayg)),
+      });
+    }
   }
 
   // 5) Interactive retention beyond the free window.
