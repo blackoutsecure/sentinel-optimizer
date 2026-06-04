@@ -25,6 +25,8 @@ export interface SentinelRates {
   freeInteractiveRetentionMonths: number;
   /** Long-term data storage, per GB per month. */
   dataStoragePerGbMonth: number;
+  /** Data lake storage compression ratio (raw:billable), e.g. 6 means 6:1. */
+  dataLakeStorageCompressionRatio: number;
   /** Data search/query, per TB scanned. */
   dataSearchPerTb: number;
   /** SOAR (Logic Apps) actions included at no cost per month. */
@@ -54,30 +56,78 @@ export interface SentinelCommitmentTier {
 /** Commitment-tier modeling mode for Analytics ingestion. */
 export type CommitmentTierMode = "off" | "auto" | "manual";
 
-export const DEFAULT_SENTINEL_RATES: SentinelRates = {
+/**
+ * Pricing maintenance metadata.
+ *
+ * Update process:
+ * 1) Refresh source docs/price pages listed below.
+ * 2) Update the baseline constants (not scattered callsites).
+ * 3) Keep `SENTINEL_PRICING_LAST_REVIEWED` current.
+ */
+export const SENTINEL_PRICING_LAST_REVIEWED = "2026-06-04";
+
+export const SENTINEL_PRICING_SOURCES = {
+  sentinelBillingDoc:
+    "https://learn.microsoft.com/en-us/azure/sentinel/billing",
+  sentinelPricingPage:
+    "https://azure.microsoft.com/en-us/pricing/details/microsoft-sentinel/",
+  monitorCostDoc:
+    "https://learn.microsoft.com/en-us/azure/azure-monitor/logs/cost-logs",
+  m365SentinelBenefit:
+    "https://azure.microsoft.com/en-us/pricing/offers/sentinel-microsoft-365-offer/",
+} as const;
+
+/**
+ * Default rate baselines (USD) used by the estimator.
+ * Keep these centralized so future price updates are one edit.
+ */
+export const SENTINEL_RATE_BASELINES = {
   analyticsIngestPerGb: 0.15,
   basicIngestPerGb: 0.05,
   dataLakeIngestPerGb: 0.1,
   interactiveRetentionPerGbMonth: 0.12,
   freeInteractiveRetentionMonths: 3,
   dataStoragePerGbMonth: 0.0043,
+  dataLakeStorageCompressionRatio: 6,
   dataSearchPerTb: 6,
   soarFreeActions: 4000,
   soarPerAction: 0.000015,
   securityCopilotPerScuMonth: 2900,
   sapPerSidMonth: 1400,
+  daysPerMonth: 365 / 12,
+} as const;
+
+/**
+ * Commitment-tier baselines for directional modeling.
+ * These are configurable estimates and should be revalidated against current offers.
+ */
+export const SENTINEL_COMMITMENT_TIER_BASELINES: SentinelCommitmentTier[] = [
+  { gbPerDay: 100, discountPct: 0.15, label: "100 GB/day" },
+  { gbPerDay: 200, discountPct: 0.2, label: "200 GB/day" },
+  { gbPerDay: 300, discountPct: 0.25, label: "300 GB/day" },
+  { gbPerDay: 500, discountPct: 0.3, label: "500 GB/day" },
+  { gbPerDay: 1000, discountPct: 0.35, label: "1 TB/day" },
+  { gbPerDay: 2000, discountPct: 0.4, label: "2 TB/day" },
+  { gbPerDay: 5000, discountPct: 0.5, label: "5 TB/day" },
+];
+
+export const DEFAULT_SENTINEL_RATES: SentinelRates = {
+  analyticsIngestPerGb: SENTINEL_RATE_BASELINES.analyticsIngestPerGb,
+  basicIngestPerGb: SENTINEL_RATE_BASELINES.basicIngestPerGb,
+  dataLakeIngestPerGb: SENTINEL_RATE_BASELINES.dataLakeIngestPerGb,
+  interactiveRetentionPerGbMonth: SENTINEL_RATE_BASELINES.interactiveRetentionPerGbMonth,
+  freeInteractiveRetentionMonths: SENTINEL_RATE_BASELINES.freeInteractiveRetentionMonths,
+  dataStoragePerGbMonth: SENTINEL_RATE_BASELINES.dataStoragePerGbMonth,
+  dataLakeStorageCompressionRatio: SENTINEL_RATE_BASELINES.dataLakeStorageCompressionRatio,
+  dataSearchPerTb: SENTINEL_RATE_BASELINES.dataSearchPerTb,
+  soarFreeActions: SENTINEL_RATE_BASELINES.soarFreeActions,
+  soarPerAction: SENTINEL_RATE_BASELINES.soarPerAction,
+  securityCopilotPerScuMonth: SENTINEL_RATE_BASELINES.securityCopilotPerScuMonth,
+  sapPerSidMonth: SENTINEL_RATE_BASELINES.sapPerSidMonth,
   // Public tier pricing is region/offer-dependent; model as configurable
   // discounts to support directional planning without hard-coding contracts.
-  commitmentTiers: [
-    { gbPerDay: 100, discountPct: 0.15, label: "100 GB/day" },
-    { gbPerDay: 200, discountPct: 0.2, label: "200 GB/day" },
-    { gbPerDay: 300, discountPct: 0.25, label: "300 GB/day" },
-    { gbPerDay: 500, discountPct: 0.3, label: "500 GB/day" },
-    { gbPerDay: 1000, discountPct: 0.35, label: "1 TB/day" },
-    { gbPerDay: 2000, discountPct: 0.4, label: "2 TB/day" },
-    { gbPerDay: 5000, discountPct: 0.5, label: "5 TB/day" },
-  ],
-  daysPerMonth: 365 / 12,
+  commitmentTiers: SENTINEL_COMMITMENT_TIER_BASELINES,
+  daysPerMonth: SENTINEL_RATE_BASELINES.daysPerMonth,
 };
 
 /** Free-ingestion benefits that reduce billable Analytics volume. */
@@ -323,7 +373,12 @@ export function estimateMonthlyCost(input: SentinelCostInput): SentinelCostEstim
       if (lane !== "dataLake") {
         interactive += monthlyGb * paidInteractive * rates.interactiveRetentionPerGbMonth;
       }
-      archive += monthlyGb * archiveMonths * rates.dataStoragePerGbMonth;
+      // Sentinel data lake storage is billed on compressed volume (public docs note 6:1).
+      const archivedMonthlyGb =
+        lane === "dataLake"
+          ? monthlyGb / Math.max(1, rates.dataLakeStorageCompressionRatio)
+          : monthlyGb;
+      archive += archivedMonthlyGb * archiveMonths * rates.dataStoragePerGbMonth;
     }
     interactiveRetention = interactive;
     dataStorage = archive;
@@ -335,8 +390,10 @@ export function estimateMonthlyCost(input: SentinelCostInput): SentinelCostEstim
     );
     interactiveRetention =
       totalAnalyticsMonthlyGb * paidInteractiveMonths * rates.interactiveRetentionPerGbMonth;
+    const dataLakeStoredMonthlyGb =
+      dataLakeMonthlyGb / Math.max(1, rates.dataLakeStorageCompressionRatio);
     dataStorage =
-      (totalAnalyticsMonthlyGb + basicAuxMonthlyGb + dataLakeMonthlyGb) *
+      (totalAnalyticsMonthlyGb + basicAuxMonthlyGb + dataLakeStoredMonthlyGb) *
       storageMonths *
       rates.dataStoragePerGbMonth;
   }

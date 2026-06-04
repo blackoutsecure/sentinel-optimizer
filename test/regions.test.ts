@@ -98,7 +98,13 @@ describe("per-table retention", () => {
     const out = estimateMonthlyCost({
       analyticsGbPerDay: 100,
       tableRetention: [
-        { name: "SecurityEvent", gbPerDay: 100, interactiveMonths: 3, totalMonths: 24 },
+        {
+          name: "SecurityEvent",
+          gbPerDay: 100,
+          lane: "analytics",
+          interactiveMonths: 3,
+          totalMonths: 24,
+        },
       ],
     });
     const expectedArchive = Math.round(100 * DAYS * 21 * 0.0043 * 100) / 100;
@@ -110,14 +116,26 @@ describe("per-table retention", () => {
     const out = estimateMonthlyCost({
       analyticsGbPerDay: 150,
       tableRetention: [
-        { name: "hot", gbPerDay: 100, interactiveMonths: 6 },
-        { name: "cold", gbPerDay: 50, interactiveMonths: 3, totalMonths: 12 },
+        { name: "hot", gbPerDay: 100, lane: "analytics", interactiveMonths: 6 },
+        { name: "cold", gbPerDay: 50, lane: "dataLake", interactiveMonths: 3, totalMonths: 12 },
       ],
     });
     const hot = 100 * DAYS * 3 * 0.12;
-    const cold = 50 * DAYS * 9 * 0.0043;
+    const cold = (50 * DAYS * 9 * 0.0043) / DEFAULT_SENTINEL_RATES.dataLakeStorageCompressionRatio;
     expect(out.breakdown.interactiveRetention).toBeCloseTo(Math.round(hot * 100) / 100, 1);
     expect(out.breakdown.dataStorage).toBeCloseTo(Math.round(cold * 100) / 100, 1);
+  });
+
+  it("applies data lake compression ratio to archived storage", () => {
+    const out = estimateMonthlyCost({
+      analyticsGbPerDay: 50,
+      tableRetention: [
+        { name: "lake", gbPerDay: 50, lane: "dataLake", interactiveMonths: 3, totalMonths: 12 },
+      ],
+    });
+    const compressedArchive =
+      (50 * DAYS * 9 * 0.0043) / DEFAULT_SENTINEL_RATES.dataLakeStorageCompressionRatio;
+    expect(out.breakdown.dataStorage).toBeCloseTo(Math.round(compressedArchive * 100) / 100, 2);
   });
 
   it("falls back to aggregate retention when no tables are given", () => {

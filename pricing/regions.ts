@@ -16,6 +16,25 @@
 
 import { DEFAULT_SENTINEL_RATES, type SentinelRates } from "./sentinelPricing.js";
 
+/**
+ * Regional baseline maintenance metadata.
+ *
+ * Update process:
+ * 1) Re-check region deltas against current public pricing pages.
+ * 2) Update `SENTINEL_REGIONS` entries.
+ * 3) Bump `REGION_PRICING_LAST_REVIEWED`.
+ */
+export const REGION_PRICING_LAST_REVIEWED = "2026-06-04";
+
+export const REGION_PRICING_SOURCES = {
+  sentinelPricingPage:
+    "https://azure.microsoft.com/en-us/pricing/details/microsoft-sentinel/",
+  monitorPricingPage:
+    "https://azure.microsoft.com/en-us/pricing/details/monitor/",
+  sentinelBillingDoc:
+    "https://learn.microsoft.com/en-us/azure/sentinel/billing",
+} as const;
+
 /** A supported Sentinel / Log Analytics region. */
 export interface SentinelRegion {
   /** Azure region id, e.g. "eastus". */

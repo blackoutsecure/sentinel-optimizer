@@ -9,7 +9,7 @@
  * If the Workers AI binding (env.AI) is not configured, it returns HTTP 501 so
  * the client can gracefully fall back to its deterministic recommendations.
  *
- * Bind Workers AI in the Pages project settings (Functions → Bindings → AI),
+ * Bind Workers AI in the Pages project settings (Functions -> Bindings -> AI),
  * or in wrangler.toml:  [ai]  binding = "AI"
  */
 

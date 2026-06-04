@@ -1,7 +1,7 @@
 /**
  * Cloudflare Pages Function — POST /api/example
  *
- * Generates a realistic *example* paste payload for a given SIEM vendor, shaped
+ * Generates a realistic example paste payload for a given SIEM vendor, shaped
  * exactly like that vendor's expected export. It is a convenience/demo helper:
  * no user data is involved — the client sends only the vendor label, a plain-
  * language schema hint, and a canonical template (all non-sensitive, app-owned

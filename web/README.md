@@ -13,7 +13,8 @@ numeric summary** to a Cloudflare Pages Function.
 - The island imports the engine directly via the `@engine` Vite alias, e.g.
   `@engine/parsers/index.js`, `@engine/pricing/index.js`. No publish step — the
   engine source lives one directory up (the repo root).
-- `functions/api/recommend.ts` — optional Cloudflare Pages Function (Workers AI).
+- `../api/*.ts` — optional API handlers (kept at repo root so frontend/backend can
+  be deployed together or split).
 
 ## Develop
 
@@ -49,9 +50,20 @@ When this variable is unset, the client defaults to the app origin + base path
 
 ### Functions + static deploy
 
-Cloudflare Pages reads the `functions/` directory from the **working directory**
-of the deploy, not from inside the asset folder. Deploy with the asset directory
-as `web/dist` while running from `web/` so `web/functions` is picked up:
+Cloudflare Pages reads the `functions/` directory from the working directory of
+the deploy, not from inside the asset folder. This repo keeps API handlers in
+`api/` at the root, then stages them into a temporary `web/functions/` folder
+for Cloudflare-compatible builds.
+
+Build with staged functions:
+
+```sh
+cd web
+npm run build:pages
+```
+
+Deploy with the asset directory as `web/dist` while running from `web/` so the
+generated `web/functions` folder is picked up:
 
 ```sh
 cd web && npx wrangler pages deploy dist --project-name sentinel-optimizer-site

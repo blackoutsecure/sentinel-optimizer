@@ -32,6 +32,25 @@ export interface DataSourceProfile {
   unit: "node" | "endpoint" | "user";
 }
 
+/**
+ * Catalog maintenance metadata.
+ *
+ * Update process:
+ * 1) Re-check EPS/event-size assumptions from current engineering field data.
+ * 2) Update `DATA_SOURCE_CATALOG` item baselines.
+ * 3) Bump `DATA_SOURCE_CATALOG_LAST_REVIEWED`.
+ */
+export const DATA_SOURCE_CATALOG_LAST_REVIEWED = "2026-06-04";
+
+export const DATA_SOURCE_CATALOG_SOURCES = {
+  sentinelEstimatorWorkbook:
+    "internal/field-estimation-baseline",
+  monitorUsageGuidance:
+    "https://learn.microsoft.com/en-us/azure/azure-monitor/logs/analyze-usage",
+  monitorCostGuidance:
+    "https://learn.microsoft.com/en-us/azure/azure-monitor/logs/cost-logs",
+} as const;
+
 /** Default data-source catalog with nominal event sizes and EPS. */
 export const DATA_SOURCE_CATALOG: readonly DataSourceProfile[] = [
   { name: "Azure AD Audit (Users)", avgEventSizeBytes: 2048, avgEpsPerNode: 0.000173611, unit: "user" },

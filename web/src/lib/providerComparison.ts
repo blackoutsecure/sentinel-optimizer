@@ -24,21 +24,43 @@ export interface ProviderComparisonModel {
 }
 
 const DAYS_PER_MONTH = 365 / 12;
+const RATE_CARD_LAST_REVIEWED = "2026-06-04";
+
+/**
+ * Public source references for competitor baseline maintenance.
+ *
+ * These rates are directional only. Keep source links and baselines updated
+ * together whenever revising provider assumptions.
+ */
+const PROVIDER_BASELINE_SOURCES = {
+  sentinel: "https://azure.microsoft.com/en-us/pricing/details/microsoft-sentinel/",
+  splunk: "https://www.splunk.com/en_us/products/pricing.html",
+  elastic: "https://www.elastic.co/pricing/",
+  rapid7: "https://www.rapid7.com/pricing/",
+  qradar: "https://www.ibm.com/products/qradar/pricing",
+  sumologic: "https://www.sumologic.com/pricing/",
+  logscale: "https://www.crowdstrike.com/platform/next-gen-siem/logscale/",
+  chronicle: "https://cloud.google.com/chronicle/pricing",
+  datadog: "https://www.datadoghq.com/pricing/",
+  exabeam: "https://www.exabeam.com/pricing/",
+  logrhythm: "https://logrhythm.com/",
+  arcticwolf: "https://arcticwolf.com/",
+} as const;
 
 // Directional public list-rate baseline per GB ingested.
 const RATE_CARD: ProviderRateCard[] = [
-  { vendor: "sentinel", label: "Microsoft Sentinel", listIngestUsdPerGb: 0.15, sourceNote: "Microsoft Sentinel public list pricing" },
-  { vendor: "splunk", label: "Splunk", listIngestUsdPerGb: 0.26, sourceNote: "Splunk public ingest list-rate baseline (directional)" },
-  { vendor: "elastic", label: "Elastic", listIngestUsdPerGb: 0.16, sourceNote: "Elastic Cloud list-rate baseline (directional)" },
-  { vendor: "rapid7", label: "Rapid7 InsightIDR", listIngestUsdPerGb: 0.2, sourceNote: "Rapid7 list-rate baseline (directional)" },
-  { vendor: "qradar", label: "IBM QRadar", listIngestUsdPerGb: 0.19, sourceNote: "QRadar list-rate baseline (directional)" },
-  { vendor: "sumologic", label: "Sumo Logic", listIngestUsdPerGb: 0.17, sourceNote: "Sumo Logic list-rate baseline (directional)" },
-  { vendor: "logscale", label: "CrowdStrike LogScale", listIngestUsdPerGb: 0.14, sourceNote: "LogScale list-rate baseline (directional)" },
-  { vendor: "chronicle", label: "Google SecOps (Chronicle)", listIngestUsdPerGb: 0.18, sourceNote: "Chronicle list-rate baseline (directional)" },
-  { vendor: "datadog", label: "Datadog", listIngestUsdPerGb: 0.18, sourceNote: "Datadog logs list-rate baseline (directional)" },
-  { vendor: "exabeam", label: "Exabeam", listIngestUsdPerGb: 0.21, sourceNote: "Exabeam list-rate baseline (directional)" },
-  { vendor: "logrhythm", label: "LogRhythm", listIngestUsdPerGb: 0.2, sourceNote: "LogRhythm list-rate baseline (directional)" },
-  { vendor: "arcticwolf", label: "Arctic Wolf", listIngestUsdPerGb: 0.24, sourceNote: "Arctic Wolf list-rate baseline (directional)" },
+  { vendor: "sentinel", label: "Microsoft Sentinel", listIngestUsdPerGb: 0.15, sourceNote: "Microsoft Sentinel public list pricing baseline" },
+  { vendor: "splunk", label: "Splunk", listIngestUsdPerGb: 0.26, sourceNote: "Public baseline (directional; verify your SKU/contract)" },
+  { vendor: "elastic", label: "Elastic", listIngestUsdPerGb: 0.16, sourceNote: "Public baseline (directional; verify your SKU/contract)" },
+  { vendor: "rapid7", label: "Rapid7 InsightIDR", listIngestUsdPerGb: 0.2, sourceNote: "Public baseline (directional; verify your SKU/contract)" },
+  { vendor: "qradar", label: "IBM QRadar", listIngestUsdPerGb: 0.19, sourceNote: "Public baseline (directional; verify your SKU/contract)" },
+  { vendor: "sumologic", label: "Sumo Logic", listIngestUsdPerGb: 0.17, sourceNote: "Public baseline (directional; verify your SKU/contract)" },
+  { vendor: "logscale", label: "CrowdStrike LogScale", listIngestUsdPerGb: 0.14, sourceNote: "Public baseline (directional; verify your SKU/contract)" },
+  { vendor: "chronicle", label: "Google SecOps (Chronicle)", listIngestUsdPerGb: 0.18, sourceNote: "Public baseline (directional; verify your SKU/contract)" },
+  { vendor: "datadog", label: "Datadog", listIngestUsdPerGb: 0.18, sourceNote: "Public baseline (directional; verify your SKU/contract)" },
+  { vendor: "exabeam", label: "Exabeam", listIngestUsdPerGb: 0.21, sourceNote: "Public baseline (directional; verify your SKU/contract)" },
+  { vendor: "logrhythm", label: "LogRhythm", listIngestUsdPerGb: 0.2, sourceNote: "Public baseline (directional; verify your SKU/contract)" },
+  { vendor: "arcticwolf", label: "Arctic Wolf", listIngestUsdPerGb: 0.24, sourceNote: "Public baseline (directional; verify your SKU/contract)" },
 ];
 
 function round2(n: number): number {
@@ -89,7 +111,10 @@ export function buildProviderComparison(args: {
     modelingNotes: [
       "Current-provider and competitor values are directional ingest-only estimates using public list-rate baselines at the same GB/day volume.",
       "Sentinel value uses the full model (lane mix, retention, benefits, commitment tier, and optimization settings), so it is more granular than competitor ingest-only comparisons.",
+      "Provider baselines map to public pricing pages captured in PROVIDER_BASELINE_SOURCES; refresh with those pages as part of any pricing update.",
+      `Source anchor example: Sentinel (${PROVIDER_BASELINE_SOURCES.sentinel}).`,
       "Negotiated contracts, bundled SKUs, and non-ingestion charges can materially change observed spend; validate with vendor quotes and billing exports.",
+      `Rate-card baselines last reviewed: ${RATE_CARD_LAST_REVIEWED} (public sources can change without notice).`,
     ],
   };
 }

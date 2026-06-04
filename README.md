@@ -50,7 +50,7 @@ schema is vendor-agnostic and designed to extend to additional SIEMs.
 ## Project layout
 
 | Path | Purpose |
-|------|---------|
+| ---- | ------- |
 | `schema/normalization.ts` | Canonical normalized schema + pure helpers |
 | `parsers/<vendor>.ts` | Vendor-specific parsers (pure, deterministic) |
 | `parsers/index.ts` | Parser registry |
@@ -58,6 +58,7 @@ schema is vendor-agnostic and designed to extend to additional SIEMs.
 | `estimators/index.ts` | Estimator registry |
 | `pricing/sentinelPricing.ts` | Sentinel monthly cost model + public rate card |
 | `pricing/index.ts` | Pricing registry |
+| `api/*.ts` | Optional HTTP endpoints (kept at root for portable backend deployment) |
 | `samples/<vendor>.json` | Sample query/export output used by tests |
 | `test/` | Unit tests (Vitest) |
 
@@ -97,6 +98,9 @@ Usage
 | summarize QuantityMB = sum(Quantity) by DataType
 ```
 
+`Quantity` in the `Usage` table is reported in MBytes, and is commonly
+converted to GB by dividing by 1000 in Microsoft examples.
+
 ### Example: Splunk (SPL)
 
 ```spl
@@ -106,7 +110,7 @@ index=_internal source=*license_usage.log type=Usage
 
 ### Example: Elasticsearch
 
-```
+```http
 GET _cat/indices?format=json&bytes=b
 ```
 
@@ -131,7 +135,7 @@ console.log(result.totals?.gbPerDay);
 Each source type carries a default average event size and events-per-second
 (see `DATA_SOURCE_CATALOG`), both overridable per row. Volume is computed with:
 
-```
+```text
 GB/day = (avgEventSizeBytes × (count × avgEpsPerNode) × 86400) / 1024³
 ```
 
@@ -163,8 +167,16 @@ E5, Defender for Servers P2, always-free sources) and an optional weekend
 ingestion-optimization discount. Pass a `NormalizedResult` directly with
 `estimateMonthlyCostFromResult(result, options)`.
 
+For data lake storage, the default model applies a 6:1 raw-to-billable
+compression ratio, which aligns with current Microsoft Sentinel data lake
+documentation.
+
 All rates live in `DEFAULT_SENTINEL_RATES`; nothing is hard-coded to a customer
 or contract.
+
+Rates and meter semantics can change by region, offer, and date. Validate
+production decisions with the Azure pricing calculator and current vendor billing
+exports.
 
 ## Development
 
@@ -176,6 +188,26 @@ npm run typecheck # tsc --noEmit
 
 Parsers are pure and deterministic, and each vendor has a sample fixture in
 `samples/` plus a unit test in `test/`.
+
+## Frontend/backend deployment modes
+
+The repo is structured so API and frontend can be deployed together or
+independently:
+
+- Frontend app: `web/`
+- API handlers: `api/`
+
+For Cloudflare Pages builds that expect a `functions/` directory under `web/`,
+the web project provides a staging build that dynamically creates
+`web/functions/api` from root `api/` before building:
+
+```bash
+cd web
+npm run build:pages
+```
+
+This keeps source-of-truth handlers in one place (`api/`) while remaining
+compatible with platforms that expect framework-local functions folders.
 
 ## Branch hardening (dev and production)
 
