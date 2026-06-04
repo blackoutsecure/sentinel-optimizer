@@ -22,10 +22,9 @@ export default function ResultsDashboard({ result, cost, input, vendorLabel, pro
   const commitment = cost.commitment;
   const selectedOption = commitment?.options.find((o) => o.selected);
   const recommendedOption = commitment?.options.find((o) => o.recommended);
-  const competitorRows = providerComparison?.rows
-    .filter((r) => r.vendor !== "sentinel")
-    .sort((a, b) => b.deltaVsSentinelMonthly - a.deltaVsSentinelMonthly)
-    .slice(0, 5);
+  const comparisonRows = providerComparison?.rows
+    .sort((a, b) => (a.vendor === "sentinel" ? -1 : b.vendor === "sentinel" ? 1 : b.deltaVsSentinelMonthly - a.deltaVsSentinelMonthly))
+    .slice(0, 6);
 
   return (
     <div className="stack">
@@ -95,7 +94,7 @@ export default function ResultsDashboard({ result, cost, input, vendorLabel, pro
           <div className="stat-grid">
             <div className="stat">
               <span className="stat-label">Modeled Sentinel spend</span>
-              <span className="stat-value">{money(providerComparison.sentinel.monthlyListSpend)}</span>
+              <span className="stat-value" style={{ color: "var(--c-ingest)" }}>{money(providerComparison.sentinel.monthlyListSpend)}</span>
             </div>
             {providerComparison.currentProvider && (
               <>
@@ -115,7 +114,7 @@ export default function ResultsDashboard({ result, cost, input, vendorLabel, pro
             )}
           </div>
 
-          {competitorRows && competitorRows.length > 0 && (
+          {comparisonRows && comparisonRows.length > 0 && (
             <div className="table-wrap">
               <table>
                 <caption className="sr-only">Competitor list-price delta vs modeled Sentinel</caption>
@@ -128,8 +127,8 @@ export default function ResultsDashboard({ result, cost, input, vendorLabel, pro
                   </tr>
                 </thead>
                 <tbody>
-                  {competitorRows.map((row) => (
-                    <tr key={row.vendor}>
+                  {comparisonRows.map((row) => (
+                    <tr key={row.vendor} className={row.vendor === "sentinel" ? "row-selected" : ""}>
                       <td>{row.label}</td>
                       <td className="num">${row.listIngestUsdPerGb.toFixed(3)}</td>
                       <td className="num">{money(row.monthlyListSpend)}</td>

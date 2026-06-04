@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from "react";
+import type { NormalizedResult } from "@engine/schema/normalization.js";
 import type { SentinelCostInput } from "@engine/pricing/sentinelPricing.js";
 import type { SentinelCostEstimate } from "@engine/pricing/sentinelPricing.js";
+import type { TableRetention } from "@engine/pricing/sentinelPricing.js";
 import { DEFAULT_SENTINEL_RATES } from "@engine/pricing/index.js";
 import { gbPerDay, gb, money } from "../lib/format.js";
 
 interface Props {
+  result: NormalizedResult;
   input: SentinelCostInput;
   cost: SentinelCostEstimate;
   onChange: (patch: Partial<SentinelCostInput>) => void;
@@ -140,6 +143,7 @@ Usage
 | summarize FreeGBPerDay = round(avg(GB), 3)`;
 
 export default function CostControls({
+  result,
   input,
   cost,
   onChange,
@@ -388,6 +392,65 @@ export default function CostControls({
   const dataLakeDeltaGbPerDay = scenarioDataLakeGbPerDay - baseDataLakeGbPerDay;
   const scenarioMonthlyDelta = scenarioIngestMonthly - baseIngestMonthly;
 
+  function suggestLaneForTable(name: string): "analytics" | "basicAux" | "dataLake" {
+    const n = name.toLowerCase();
+    if (/(archive|historical|history|cold|raw|backup|longterm)/.test(n)) return "dataLake";
+    if (/(commonsecuritylog|firewall|netflow|flow|proxy|dns|syslog|w3cidsiislog)/.test(n)) return "basicAux";
+    if (/(signinlogs|auditlogs|securityevent|windows|defender|alert|incident|identity|email|device)/.test(n)) {
+      return "analytics";
+    }
+    return "basicAux";
+  }
+
+  function buildPerTablePlan(): TableRetention[] {
+    const sorted = [...result.sources].sort((a, b) => (b.gbPerDay ?? 0) - (a.gbPerDay ?? 0));
+    return sorted
+      .filter((s) => (s.gbPerDay ?? 0) > 0)
+      .map((s) => {
+        const lane = suggestLaneForTable(s.name);
+        const interactiveMonths = lane === "analytics" ? 3 : lane === "basicAux" ? 1 : 0;
+        const totalMonths = lane === "dataLake" ? 12 : 6;
+        return {
+          name: s.name,
+          gbPerDay: Math.max(0, s.gbPerDay ?? 0),
+          lane,
+          interactiveMonths,
+          totalMonths,
+        };
+      });
+  }
+
+  function applyPerTableMigrationEstimate() {
+    const plan = buildPerTablePlan();
+    const totals = plan.reduce(
+      (acc, row) => {
+        if (row.lane === "analytics") acc.analytics += row.gbPerDay;
+        else if (row.lane === "basicAux") acc.basicAux += row.gbPerDay;
+        else acc.dataLake += row.gbPerDay;
+        return acc;
+      },
+      { analytics: 0, basicAux: 0, dataLake: 0 },
+    );
+
+    onChange({
+      tableRetention: plan,
+      analyticsGbPerDay: Number(totals.analytics.toFixed(3)),
+      basicAuxGbPerDay: Number(totals.basicAux.toFixed(3)),
+      dataLakeGbPerDay: Number(totals.dataLake.toFixed(3)),
+    });
+  }
+
+  const perTablePreview = buildPerTablePlan();
+  const previewTotals = perTablePreview.reduce(
+    (acc, row) => {
+      if (row.lane === "analytics") acc.analytics += row.gbPerDay;
+      else if (row.lane === "basicAux") acc.basicAux += row.gbPerDay;
+      else acc.dataLake += row.gbPerDay;
+      return acc;
+    },
+    { analytics: 0, basicAux: 0, dataLake: 0 },
+  );
+
   return (
     <div className="stack">
       <div className="section-head">
@@ -453,6 +516,36 @@ export default function CostControls({
             <button type="button" className="btn btn-primary btn-sm" onClick={() => applyGuidedSplit(laneProfile)}>
               Apply guided allocation
             </button>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={applyPerTableMigrationEstimate}>
+              Attempt per-table migration estimate
+            </button>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Per-table migration estimate (top 8)</th>
+                  <th>Suggested lane</th>
+                  <th className="num">GB/day</th>
+                </tr>
+              </thead>
+              <tbody>
+                {perTablePreview.slice(0, 8).map((row) => (
+                  <tr key={`preview-${row.name}`}>
+                    <td>{row.name}</td>
+                    <td>{row.lane === "basicAux" ? "Basic / Auxiliary" : row.lane === "dataLake" ? "Data Lake" : "Analytics"}</td>
+                    <td className="num">{gbPerDay(row.gbPerDay)}</td>
+                  </tr>
+                ))}
+                <tr>
+                  <td>Estimated totals from per-table mapping</td>
+                  <td>Analytics / Basic / Data Lake</td>
+                  <td className="num">
+                    {`${gbPerDay(previewTotals.analytics)} / ${gbPerDay(previewTotals.basicAux)} / ${gbPerDay(previewTotals.dataLake)}`}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
           <p className="ai-note">
             This mode avoids forcing table-plan decisions too early. Refine with advanced mode later once
@@ -461,6 +554,10 @@ export default function CostControls({
           <p className="ai-note">
             Suggested defaults by profile: detection-first (80/15/5), balanced (60/30/10),
             cost-first (40/45/15) for Analytics/Basic-Aux/Data Lake.
+          </p>
+          <p className="ai-note">
+            Per-table estimate is a best-effort migration guess based on table names and typical usage patterns.
+            Validate and adjust in the per-table retention section before final rollout.
           </p>
         </>
       ) : (

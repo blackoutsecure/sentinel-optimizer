@@ -166,6 +166,7 @@ export default function Optimizer() {
                 <RegionControls input={costInput} cost={cost} onChange={patchInput} />
                 <hr className="mt-sm" />
                 <CostControls
+                  result={result}
                   input={costInput}
                   cost={cost}
                   onChange={patchInput}
