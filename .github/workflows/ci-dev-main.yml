@@ -13,6 +13,11 @@ on:
 permissions:
   contents: read
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  NPM_CONFIG_AUDIT: "false"
+  NPM_CONFIG_FUND: "false"
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -21,6 +26,7 @@ jobs:
   engine:
     name: Engine tests and typecheck
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,7 +38,8 @@ jobs:
           cache: npm
 
       - name: Install root dependencies
-        run: npm ci
+        run: |
+          npm ci || (echo "Retrying npm ci after cache verify" && npm cache verify && npm ci)
 
       - name: Typecheck engine
         run: npm run typecheck
@@ -43,6 +50,7 @@ jobs:
   web:
     name: Web typecheck and build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: web
@@ -58,7 +66,8 @@ jobs:
           cache-dependency-path: web/package-lock.json
 
       - name: Install web dependencies
-        run: npm ci
+        run: |
+          npm ci || (echo "Retrying npm ci after cache verify" && npm cache verify && npm ci)
 
       - name: Typecheck web
         run: npm run typecheck
