@@ -36,6 +36,8 @@ interface Env {
 
 const DEFAULT_MODEL = "@cf/meta/llama-3.1-8b-instruct";
 const MAX_BODY_BYTES = 16 * 1024;
+const SUMMARY_MAX_TOKENS = 700;
+const SUMMARY_TEMPERATURE = 0.2;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -88,20 +90,42 @@ function buildPrompt(s: AggregatedSummary): string {
         ].join("\n")
       : style === "board"
         ? [
-            "Return exactly 5 short bullets and end with one decision line.",
-            "Each bullet must begin with one of these tags in order:",
-            "[Business Impact]",
-            "[Risk Posture]",
-            "[Investment Case]",
-            "[Execution Confidence]",
-            "[Fallback Plan]",
-            "Final line must start with: Decision Ask:",
+            "Return exactly 6 lines total.",
+            "Line 1 must begin: [Business Impact]",
+            "Line 2 must begin: [Risk Posture]",
+            "Line 3 must begin: [Investment Case]",
+            "Line 4 must begin: [Execution Confidence]",
+            "Line 5 must begin: [Fallback Plan]",
+            "Line 6 must begin: Decision Ask:",
+            "Each line must be one sentence and <= 24 words.",
             "Keep jargon minimal and emphasize governance, risk, and financial impact.",
           ].join("\n")
         : [
             "Return 1 concise paragraph (170-260 words) for executive leadership.",
             "No section labels, no markdown headers.",
           ].join("\n");
+
+  const flowInstruction =
+    style === "board"
+      ? [
+          "Ensure the 6 lines cover this sequence:",
+          "1) business impact now,",
+          "2) risk posture if unchanged,",
+          "3) phased migration recommendation,",
+          "4) top 3 cost actions (highest savings first),",
+          "5) fallback parallel-run validation window and success criteria,",
+          "6) decision ask with estimate caveat.",
+        ].join("\n")
+      : [
+          "Cover this exact flow:",
+          "1) Story + posture: one sentence framing current state and risk/cost pressure.",
+          "2) Persona-aware rationale: why a security leader should act now (cost, detection quality, operational control).",
+          "3) Migration recommendation: phased approach (pilot high-volume source, validate detections, then expand).",
+          "4) Enhancement recommendation: include DCR/workspace transformations, tiering, retention optimization, and commitment tier where relevant.",
+          "4a) Cost optimization playbook: include a prioritized list of the top 3 cost actions (highest savings first) with expected impact and operational caution for each.",
+          "5) Worst-case fallback: if full migration cannot proceed now, recommend running Microsoft Sentinel in parallel with the current SIEM for a defined validation window, with explicit success criteria and cutover decision point.",
+          "6) Close with one sentence that figures are planning estimates and should be validated against actual billing and detection outcomes.",
+        ].join("\n");
 
   return [
     `You are a Microsoft Sentinel migration and cost-optimization advisor.`,
@@ -121,14 +145,7 @@ function buildPrompt(s: AggregatedSummary): string {
     ``,
     `Detected opportunities:\n${recs || "- (none)"}`,
     ``,
-    `Cover this exact flow:`,
-    `1) Story + posture: one sentence framing current state and risk/cost pressure.`,
-    `2) Persona-aware rationale: why a security leader should act now (cost, detection quality, operational control).`,
-    `3) Migration recommendation: phased approach (pilot high-volume source, validate detections, then expand).`,
-    `4) Enhancement recommendation: include DCR/workspace transformations, tiering, retention optimization, and commitment tier where relevant.`,
-    `4a) Cost optimization playbook: include a prioritized list of the top 3 cost actions (highest savings first) with expected impact and operational caution for each.`,
-    `5) Worst-case fallback: if full migration cannot proceed now, recommend running Microsoft Sentinel in parallel with the current SIEM for a defined validation window, with explicit success criteria and cutover decision point.`,
-    `6) Close with one sentence that figures are planning estimates and should be validated against actual billing and detection outcomes.`,
+    flowInstruction,
   ].join("\n");
 }
 
@@ -165,6 +182,8 @@ export const onRequestPost = async (ctx: { request: Request; env: Env }): Promis
         },
         { role: "user", content: buildPrompt(parsed) },
       ],
+      max_tokens: SUMMARY_MAX_TOKENS,
+      temperature: SUMMARY_TEMPERATURE,
     });
     const text = (out.response ?? "").trim();
     if (!text) return json({ error: "The AI service returned an empty response." }, 502);
