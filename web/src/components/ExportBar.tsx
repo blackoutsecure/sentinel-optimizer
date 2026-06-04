@@ -94,9 +94,10 @@ export default function ExportBar({ result, cost, input, vendorLabel, provenance
       </div>
       <p className="ai-note">
         Exports run entirely in your browser — nothing is uploaded. The PDF and PowerPoint include
-        the summary, charts, recommendations, and reproducibility appendices (interpretation notes,
+        the summary, provider comparison model (current provider vs Sentinel), charts, recommendations, and reproducibility appendices (interpretation notes,
         query evidence, extracted rows, and exact inputs/parameters used)
         {aiSummary ? ", plus the AI executive summary you generated." : ". Generate the AI executive summary above to include it."}
+        {" "}The provider comparison is also included as a dedicated slide and PDF section with graph summary.
         {" "}The evidence JSON contains the same reproducibility payload in machine-readable form.
         {" "}The PowerPoint follows the Microsoft Sentinel pricing-offer layout and is clearly marked
         as an unofficial, independent estimate.

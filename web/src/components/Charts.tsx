@@ -12,6 +12,7 @@ import {
 import { Doughnut, Bar } from "react-chartjs-2";
 import type { NormalizedResult } from "@engine/schema/normalization.js";
 import type { SentinelCostBreakdown } from "@engine/pricing/sentinelPricing.js";
+import type { ProviderComparisonModel } from "../lib/providerComparison.js";
 import { money, gbPerDay } from "../lib/format.js";
 
 ChartJS.register(ArcElement, BarElement, CategoryScale, LinearScale, Tooltip, Legend);
@@ -132,6 +133,60 @@ export function CostBreakdownChart({ breakdown }: { breakdown: SentinelCostBreak
     plugins: {
       legend: { display: false },
       tooltip: { callbacks: { label: (c) => ` ${money(c.parsed.x ?? 0)} / mo` } },
+    },
+    scales: {
+      x: {
+        ticks: { color: text, callback: (v) => money(Number(v)) },
+        grid: { color: grid },
+      },
+      y: { ticks: { color: text }, grid: { display: false } },
+    },
+  };
+
+  return (
+    <div className="chart-box">
+      <Bar key={themeKey} data={data} options={options} />
+    </div>
+  );
+}
+
+export function ProviderSpendComparisonChart({ comparison }: { comparison: ProviderComparisonModel }) {
+  const themeKey = useThemeKey();
+  const text = cssVar("--text-muted", "#9aa7b8");
+  const grid = cssVar("--border", "#232d3d");
+  const sentinelColor = cssVar("--c-ingest", "#18d1c4");
+  const otherColor = cssVar("--c-retention", "#91a0b4");
+
+  const top = comparison.rows.slice(0, 6).sort((a, b) => b.monthlyListSpend - a.monthlyListSpend);
+  const data = {
+    labels: top.map((r) => r.label),
+    datasets: [
+      {
+        label: "Estimated monthly spend",
+        data: top.map((r) => r.monthlyListSpend),
+        backgroundColor: top.map((r) => (r.vendor === "sentinel" ? sentinelColor : otherColor)),
+        borderRadius: 6,
+        maxBarThickness: 34,
+      },
+    ],
+  };
+
+  const options: ChartOptions<"bar"> = {
+    indexAxis: "y",
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: {
+          label: (c) => ` ${money(c.parsed.x ?? 0)} / mo`,
+          afterLabel: (c) => {
+            const r = top[c.dataIndex];
+            if (!r || r.vendor === "sentinel") return " Modeled Sentinel baseline";
+            return ` Delta vs Sentinel: ${r.deltaVsSentinelMonthly > 0 ? "+" : ""}${money(r.deltaVsSentinelMonthly)} / mo`;
+          },
+        },
+      },
     },
     scales: {
       x: {

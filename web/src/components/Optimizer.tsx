@@ -6,6 +6,7 @@ import { DEFAULT_REGION_ID } from "@engine/pricing/regions.js";
 import type { Vendor } from "../lib/examples.js";
 import { buildSummary, requestAiSummary } from "../lib/aiClient.js";
 import { generateRecommendations } from "../lib/recommendations.js";
+import { buildProviderComparison } from "../lib/providerComparison.js";
 import type { ExportProvenance } from "../lib/exporters.js";
 import DataInput from "./DataInput.js";
 import InventoryWizard from "./InventoryWizard.js";
@@ -13,7 +14,7 @@ import CostControls from "./CostControls.js";
 import RegionControls from "./RegionControls.js";
 import RetentionTable from "./RetentionTable.js";
 import ResultsDashboard from "./ResultsDashboard.js";
-import { SourceBreakdownChart, CostBreakdownChart } from "./Charts.js";
+import { SourceBreakdownChart, CostBreakdownChart, ProviderSpendComparisonChart } from "./Charts.js";
 import Recommendations, { type AiState } from "./Recommendations.js";
 import ExportBar from "./ExportBar.js";
 
@@ -93,6 +94,16 @@ export default function Optimizer() {
     if (concentration?.severity === "high") return "detectionFirst";
     return "balanced";
   }, [result, cost, costInput, ai.text]);
+
+  const providerComparison = useMemo(() => {
+    if (!result || !cost) return null;
+    const totalGbPerDay = result.totals?.gbPerDay ?? result.sources.reduce((a, s) => a + (s.gbPerDay ?? 0), 0);
+    return buildProviderComparison({
+      currentVendor: vendor,
+      totalGbPerDay,
+      sentinelMonthlyModeledCost: cost.monthlyCost,
+    });
+  }, [result, cost, vendor]);
 
   function patchInput(patch: Partial<SentinelCostInput>) {
     setCostInput((prev) => ({ ...prev, ...patch }));
@@ -199,7 +210,13 @@ export default function Optimizer() {
                 />
               </div>
               <div className="panel panel-pad">
-                <ResultsDashboard result={result} cost={cost} input={costInput} vendorLabel={vendorLabel} />
+                <ResultsDashboard
+                  result={result}
+                  cost={cost}
+                  input={costInput}
+                  vendorLabel={vendorLabel}
+                  providerComparison={providerComparison ?? undefined}
+                />
               </div>
             </div>
             <div className="panel panel-pad">
@@ -220,6 +237,10 @@ export default function Optimizer() {
                 <h3>Cost by category</h3>
                 <CostBreakdownChart breakdown={cost.breakdown} />
               </div>
+            </div>
+            <div className="panel panel-pad" id="export-chart-provider">
+              <h3>Provider spend comparison (public list-price baseline)</h3>
+              {providerComparison && <ProviderSpendComparisonChart comparison={providerComparison} />}
             </div>
           </section>
 

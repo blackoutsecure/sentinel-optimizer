@@ -1,5 +1,6 @@
 import type { NormalizedResult } from "@engine/schema/normalization.js";
 import type { SentinelCostEstimate, SentinelCostInput } from "@engine/pricing/sentinelPricing.js";
+import type { ProviderComparisonModel } from "../lib/providerComparison.js";
 import { money, gbPerDay, gb, pct } from "../lib/format.js";
 
 interface Props {
@@ -7,9 +8,10 @@ interface Props {
   cost: SentinelCostEstimate;
   input: SentinelCostInput;
   vendorLabel: string;
+  providerComparison?: ProviderComparisonModel;
 }
 
-export default function ResultsDashboard({ result, cost, input, vendorLabel }: Props) {
+export default function ResultsDashboard({ result, cost, input, vendorLabel, providerComparison }: Props) {
   const totalGbDay = result.totals?.gbPerDay ?? result.sources.reduce((a, s) => a + (s.gbPerDay ?? 0), 0);
   const sorted = [...result.sources].sort((a, b) => (b.gbPerDay ?? 0) - (a.gbPerDay ?? 0));
   const basicAuxGbDay = Math.max(0, input.basicAuxGbPerDay ?? 0);
@@ -20,6 +22,10 @@ export default function ResultsDashboard({ result, cost, input, vendorLabel }: P
   const commitment = cost.commitment;
   const selectedOption = commitment?.options.find((o) => o.selected);
   const recommendedOption = commitment?.options.find((o) => o.recommended);
+  const competitorRows = providerComparison?.rows
+    .filter((r) => r.vendor !== "sentinel")
+    .sort((a, b) => b.deltaVsSentinelMonthly - a.deltaVsSentinelMonthly)
+    .slice(0, 5);
 
   return (
     <div className="stack">
@@ -79,6 +85,71 @@ export default function ResultsDashboard({ result, cost, input, vendorLabel }: P
           </tbody>
         </table>
       </div>
+
+      {providerComparison && (
+        <div className="stack">
+          <div className="section-head">
+            <span className="eyebrow">Provider spend comparison (public list baseline)</span>
+          </div>
+
+          <div className="stat-grid">
+            <div className="stat">
+              <span className="stat-label">Modeled Sentinel spend</span>
+              <span className="stat-value">{money(providerComparison.sentinel.monthlyListSpend)}</span>
+            </div>
+            {providerComparison.currentProvider && (
+              <>
+                <div className="stat">
+                  <span className="stat-label">Current provider list baseline</span>
+                  <span className="stat-value">{money(providerComparison.currentProvider.monthlyListSpend)}</span>
+                </div>
+                <div className="stat">
+                  <span className="stat-label">Delta vs Sentinel</span>
+                  <span className="stat-value">
+                    {providerComparison.currentProvider.deltaVsSentinelMonthly === 0
+                      ? "$0"
+                      : `${providerComparison.currentProvider.deltaVsSentinelMonthly > 0 ? "+" : ""}${money(providerComparison.currentProvider.deltaVsSentinelMonthly)}`}
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+
+          {competitorRows && competitorRows.length > 0 && (
+            <div className="table-wrap">
+              <table>
+                <caption className="sr-only">Competitor list-price delta vs modeled Sentinel</caption>
+                <thead>
+                  <tr>
+                    <th>Provider</th>
+                    <th className="num">Public list-rate / GB</th>
+                    <th className="num">Est. spend / month</th>
+                    <th className="num">Delta vs Sentinel</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {competitorRows.map((row) => (
+                    <tr key={row.vendor}>
+                      <td>{row.label}</td>
+                      <td className="num">${row.listIngestUsdPerGb.toFixed(3)}</td>
+                      <td className="num">{money(row.monthlyListSpend)}</td>
+                      <td className="num">
+                        {row.deltaVsSentinelMonthly === 0
+                          ? "$0"
+                          : `${row.deltaVsSentinelMonthly > 0 ? "+" : ""}${money(row.deltaVsSentinelMonthly)} (${pct(row.deltaVsSentinelPct / 100)})`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {providerComparison.modelingNotes.map((note, idx) => (
+            <p key={`provider-note-${idx}`} className="ai-note">{note}</p>
+          ))}
+        </div>
+      )}
 
       <div className="table-wrap">
         <table>

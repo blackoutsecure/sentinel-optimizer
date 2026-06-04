@@ -14,7 +14,9 @@ import type {
   SentinelCostInput,
   SentinelCostBreakdown,
 } from "@engine/pricing/sentinelPricing.js";
+import type { Vendor } from "./examples.js";
 import type { Recommendation } from "./recommendations.js";
+import { buildProviderComparison, type ProviderComparisonModel } from "./providerComparison.js";
 // Type-only import (erased at build time — does NOT bundle the library; the
 // runtime copy is pulled in via dynamic import() inside exportPptx).
 import type PptxGenJS from "pptxgenjs";
@@ -66,13 +68,14 @@ export interface ReportData {
   extractedRows: { name: string; gbPerDay: number; sharePct: number; bytes?: number; events?: number }[];
   inputEvidence: string;
   costInputJson: string;
+  providerComparison: ProviderComparisonModel;
   /** PNG data URLs captured from the on-page charts. */
-  charts: { sources?: string; cost?: string };
+  charts: { sources?: string; cost?: string; provider?: string };
 }
 
 export interface ExportProvenance {
   mode: "query-export" | "inventory-estimate";
-  vendorId?: string;
+  vendorId?: Vendor;
   queryLanguage?: string;
   queryText?: string;
   rawInputText?: string;
@@ -179,6 +182,12 @@ export function buildReportData(args: {
     value: cost.breakdown[b.key] ?? 0,
   })).filter((b) => b.value > 0);
 
+  const providerComparison = buildProviderComparison({
+    currentVendor: provenance.vendorId,
+    totalGbPerDay,
+    sentinelMonthlyModeledCost: cost.monthlyCost,
+  });
+
   return {
     vendorLabel,
     generatedAt: new Date(),
@@ -201,9 +210,11 @@ export function buildReportData(args: {
     extractedRows,
     inputEvidence,
     costInputJson: JSON.stringify(input, null, 2),
+    providerComparison,
     charts: {
       sources: captureChart("export-chart-sources"),
       cost: captureChart("export-chart-cost"),
+      provider: captureChart("export-chart-provider"),
     },
   };
 }
@@ -359,6 +370,38 @@ export async function exportPdf(data: ReportData): Promise<void> {
       doc.text("Cost by category", margin + imgW + 16, y + imgH + 12);
     }
     y += imgH + 28;
+  }
+
+  // ---- Provider comparison ----
+  heading("Current provider vs Sentinel (public list-price baseline)");
+  if (data.charts.provider) {
+    const imgW = contentW;
+    const imgH = imgW * 0.32;
+    ensureSpace(imgH + 22);
+    doc.addImage(data.charts.provider, "PNG", margin, y, imgW, imgH);
+    y += imgH + 14;
+  }
+
+  const providerRows = data.providerComparison.rows
+    .sort((a, b) => b.deltaVsSentinelMonthly - a.deltaVsSentinelMonthly)
+    .slice(0, 8)
+    .map((r) => [
+      r.label,
+      `$${r.listIngestUsdPerGb.toFixed(3)}`,
+      money(r.monthlyListSpend),
+      r.deltaVsSentinelMonthly === 0
+        ? "$0"
+        : `${r.deltaVsSentinelMonthly > 0 ? "+" : ""}${money(r.deltaVsSentinelMonthly)}`,
+    ]);
+
+  simpleTable(
+    ["Provider", "List-rate / GB", "Est. monthly", "Delta vs Sentinel"],
+    providerRows,
+    [contentW * 0.4, contentW * 0.16, contentW * 0.22, contentW * 0.22],
+  );
+
+  for (const note of data.providerComparison.modelingNotes) {
+    paragraph(`- ${note}`, 8.5, grey);
   }
 
   // ---- Cost breakdown table ----
@@ -535,6 +578,7 @@ export function exportEvidenceJson(data: ReportData): void {
     queryEvidence: data.queryEvidence,
     extractedRows: data.extractedRows,
     recommendations: data.recommendations,
+    providerComparison: data.providerComparison,
     aiSummary: data.aiSummary,
     aiModel: data.aiModel,
     costBreakdown: data.breakdown,
@@ -645,7 +689,79 @@ export async function exportPptx(data: ReportData): Promise<void> {
     s3.addText(c[1], { x: x + 0.3, y: yy + 0.6, w: cw - 0.5, h: 0.9, color: c[2], fontSize: 28, bold: true, fontFace: "Segoe UI" });
   });
 
-  // ---- Slide 4: Visual breakdown (charts) ----
+  // ---- Slide 4: Provider comparison ----
+  {
+    const s4 = pptx.addSlide();
+    header(s4, "Current provider vs Sentinel (public list baseline)");
+    const current = data.providerComparison.currentProvider;
+    s4.addShape(pptx.ShapeType.roundRect, {
+      x: 0.6,
+      y: 1.25,
+      w: W - 1.2,
+      h: 1.0,
+      fill: { color: BRAND.light },
+      line: { color: "D9E2EF", width: 1 },
+      rectRadius: 0.06,
+    });
+    s4.addText(`Modeled Sentinel spend: ${money(data.providerComparison.sentinel.monthlyListSpend)} / mo`, {
+      x: 0.85, y: 1.5, w: 4.4, h: 0.3, color: BRAND.navy, fontSize: 14, bold: true, fontFace: "Segoe UI",
+    });
+    if (current) {
+      const sign = current.deltaVsSentinelMonthly > 0 ? "+" : "";
+      s4.addText(`${current.label} baseline: ${money(current.monthlyListSpend)} / mo`, {
+        x: 5.1, y: 1.5, w: 3.7, h: 0.3, color: BRAND.ink, fontSize: 12, fontFace: "Segoe UI",
+      });
+      s4.addText(`Delta vs Sentinel: ${sign}${money(current.deltaVsSentinelMonthly)} / mo`, {
+        x: 8.8, y: 1.5, w: 3.6, h: 0.3, color: current.deltaVsSentinelMonthly >= 0 ? BRAND.green : BRAND.amber, fontSize: 12, bold: true, fontFace: "Segoe UI",
+      });
+    }
+
+    if (data.charts.provider) {
+      s4.addImage({ data: data.charts.provider, x: 0.6, y: 2.45, w: 6.3, h: 3.1 });
+    }
+
+    const top = data.providerComparison.rows
+      .filter((r) => r.vendor !== "sentinel")
+      .sort((a, b) => b.deltaVsSentinelMonthly - a.deltaVsSentinelMonthly)
+      .slice(0, 6);
+    const rows: PptxGenJS.TableRow[] = [
+      [
+        { text: "Provider", options: { bold: true, color: BRAND.white, fill: { color: BRAND.navy } } },
+        { text: "List-rate / GB", options: { bold: true, color: BRAND.white, fill: { color: BRAND.navy }, align: "right" } },
+        { text: "Est. monthly", options: { bold: true, color: BRAND.white, fill: { color: BRAND.navy }, align: "right" } },
+        { text: "Delta vs Sentinel", options: { bold: true, color: BRAND.white, fill: { color: BRAND.navy }, align: "right" } },
+      ],
+      ...top.map((r): PptxGenJS.TableRow => [
+        { text: r.label, options: {} },
+        { text: `$${r.listIngestUsdPerGb.toFixed(3)}`, options: { align: "right" } },
+        { text: money(r.monthlyListSpend), options: { align: "right" } },
+        { text: `${r.deltaVsSentinelMonthly > 0 ? "+" : ""}${money(r.deltaVsSentinelMonthly)}`, options: { align: "right" } },
+      ]),
+    ];
+    s4.addTable(rows, {
+      x: 7.1,
+      y: 2.45,
+      w: 5.6,
+      fontSize: 9.5,
+      fontFace: "Segoe UI",
+      border: { type: "solid", color: "E2E8F2", pt: 1 },
+      colW: [2.3, 1.0, 1.2, 1.1],
+    });
+
+    s4.addText(data.providerComparison.modelingNotes.map((n) => ({ text: n, options: {} })), {
+      x: 0.7,
+      y: 5.8,
+      w: W - 1.4,
+      h: 1.1,
+      color: BRAND.grey,
+      fontSize: 9,
+      bullet: { code: "2022", indent: 14 },
+      fontFace: "Segoe UI",
+      lineSpacingMultiple: 1.05,
+    });
+  }
+
+  // ---- Slide 5: Visual breakdown (charts) ----
   if (data.charts.sources || data.charts.cost) {
     const s4 = pptx.addSlide();
     header(s4, "Visual breakdown");
