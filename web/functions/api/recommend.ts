@@ -74,10 +74,40 @@ function buildPrompt(s: AggregatedSummary): string {
     .map((r) => `- [${r.severity}] ${r.title}${r.monthlySavings ? ` (~$${r.monthlySavings}/mo)` : ""}`)
     .join("\n");
 
+  const formatInstruction =
+    style === "technical"
+      ? [
+          "Return exactly 6 short sections using these labels and this order:",
+          "Assumptions:",
+          "Current State:",
+          "Target State:",
+          "Implementation Plan (30/60/90 days):",
+          "Operational Risks + Mitigations:",
+          "Validation Metrics:",
+          "Use implementation language (DCR, transformations, table plans, retention, commitment tier).",
+        ].join("\n")
+      : style === "board"
+        ? [
+            "Return exactly 5 short bullets and end with one decision line.",
+            "Each bullet must begin with one of these tags in order:",
+            "[Business Impact]",
+            "[Risk Posture]",
+            "[Investment Case]",
+            "[Execution Confidence]",
+            "[Fallback Plan]",
+            "Final line must start with: Decision Ask:",
+            "Keep jargon minimal and emphasize governance, risk, and financial impact.",
+          ].join("\n")
+        : [
+            "Return 1 concise paragraph (170-260 words) for executive leadership.",
+            "No section labels, no markdown headers.",
+          ].join("\n");
+
   return [
-    `You are a Microsoft Sentinel migration and cost-optimization advisor. Write a concise executive summary (170-260 words) for a security leader persona (CISO/SOC Director).`,
+    `You are a Microsoft Sentinel migration and cost-optimization advisor.`,
     `Use only the aggregated figures below. Do not invent specific log contents or customer names.`,
     styleInstruction,
+    formatInstruction,
     `Write in clear, plain business language with a confident but neutral tone.`,
     ``,
     `SIEM: ${s.vendor}`,
@@ -91,7 +121,7 @@ function buildPrompt(s: AggregatedSummary): string {
     ``,
     `Detected opportunities:\n${recs || "- (none)"}`,
     ``,
-    `Write this exact flow in plain prose (no markdown headers):`,
+    `Cover this exact flow:`,
     `1) Story + posture: one sentence framing current state and risk/cost pressure.`,
     `2) Persona-aware rationale: why a security leader should act now (cost, detection quality, operational control).`,
     `3) Migration recommendation: phased approach (pilot high-volume source, validate detections, then expand).`,

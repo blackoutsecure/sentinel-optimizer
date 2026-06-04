@@ -98,13 +98,14 @@ export default function Optimizer() {
     setCostInput((prev) => ({ ...prev, ...patch }));
   }
 
-  async function enhance() {
+  async function enhance(styleOverride?: "executive" | "technical" | "board") {
     if (!result || !cost) return;
+    const styleToUse = styleOverride ?? aiStyle;
     setAi((prev) => ({ ...prev, state: "loading", error: null }));
     const recs = generateRecommendations({ result, cost, input: costInput });
     const summary = buildSummary({
       vendor: vendorLabel,
-      summaryStyle: aiStyle,
+      summaryStyle: styleToUse,
       totalGbPerDay: result.totals?.gbPerDay ?? 0,
       sources: result.sources,
       monthlyCost: cost.monthlyCost,
@@ -118,6 +119,14 @@ export default function Optimizer() {
       setAi({ text: out.text, ...(out.model ? { model: out.model } : {}), state: "idle", error: null });
     } catch (e) {
       setAi((prev) => ({ ...prev, state: "error", error: (e as Error).message }));
+    }
+  }
+
+  function changeAiStyle(nextStyle: "executive" | "technical" | "board") {
+    setAiStyle(nextStyle);
+    if (ai.state === "loading") return;
+    if (ai.text) {
+      void enhance(nextStyle);
     }
   }
 
@@ -223,7 +232,7 @@ export default function Optimizer() {
                 vendorLabel={vendorLabel}
                 ai={ai}
                 aiStyle={aiStyle}
-                onAiStyleChange={setAiStyle}
+                onAiStyleChange={changeAiStyle}
                 onEnhance={enhance}
               />
             </div>
