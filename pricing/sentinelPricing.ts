@@ -102,6 +102,13 @@ export interface TableRetention {
   name: string;
   /** Daily ingest for this table, GB/day. */
   gbPerDay: number;
+  /**
+   * Ingestion plan for this table. `auto` uses a heuristic based on retention.
+   * - analytics: full Analytics plan
+   * - basicAux: Basic/Auxiliary plan
+   * - dataLake: Data Lake-only style placement
+   */
+  lane?: "analytics" | "basicAux" | "dataLake" | "auto";
   /** Total interactive retention, months. Default 3 (90 days, free with Sentinel). */
   interactiveMonths?: number;
   /**
@@ -230,6 +237,23 @@ function sortedCommitmentTiers(tiers: SentinelCommitmentTier[]): SentinelCommitm
     }));
 }
 
+function resolveTableLane(
+  t: TableRetention,
+): "analytics" | "basicAux" | "dataLake" {
+  if (t.lane && t.lane !== "auto") return t.lane;
+  const interactive = t.interactiveMonths ?? DEFAULT_SENTINEL_RATES.freeInteractiveRetentionMonths;
+  const total = Math.max(t.totalMonths ?? interactive, interactive);
+  // Heuristic for migration planning when explicit table plans are unknown:
+  // - long archive + short hot window -> data lake
+  // - very short hot window -> basic/aux
+  // - otherwise analytics
+  if (total >= 12 && interactive <= DEFAULT_SENTINEL_RATES.freeInteractiveRetentionMonths) {
+    return "dataLake";
+  }
+  if (interactive <= 1) return "basicAux";
+  return "analytics";
+}
+
 /** Estimate the monthly Sentinel cost from ingestion volume and options. */
 export function estimateMonthlyCost(input: SentinelCostInput): SentinelCostEstimate {
   const regionRates = input.regionId
@@ -245,13 +269,30 @@ export function estimateMonthlyCost(input: SentinelCostInput): SentinelCostEstim
       (benefits.freeDataSourceGbPerDay ?? 0),
   );
 
-  const analyticsGbPerDay = Math.max(0, input.analyticsGbPerDay);
+  const perTable = input.tableRetention?.filter((t) => (t.gbPerDay ?? 0) > 0) ?? [];
+
+  let analyticsGbPerDay = Math.max(0, input.analyticsGbPerDay);
+  let basicAuxGbPerDay = Math.max(0, input.basicAuxGbPerDay ?? 0);
+  let dataLakeGbPerDay = Math.max(0, input.dataLakeGbPerDay ?? 0);
+
+  if (perTable.length > 0) {
+    analyticsGbPerDay = 0;
+    basicAuxGbPerDay = 0;
+    dataLakeGbPerDay = 0;
+    for (const t of perTable) {
+      const lane = resolveTableLane(t);
+      if (lane === "analytics") analyticsGbPerDay += Math.max(0, t.gbPerDay);
+      else if (lane === "basicAux") basicAuxGbPerDay += Math.max(0, t.gbPerDay);
+      else dataLakeGbPerDay += Math.max(0, t.gbPerDay);
+    }
+  }
+
   const billableAnalyticsGbPerDay = Math.max(0, analyticsGbPerDay - benefitGbPerDay);
 
   const billableAnalyticsMonthlyGb = billableAnalyticsGbPerDay * rates.daysPerMonth;
   const totalAnalyticsMonthlyGb = analyticsGbPerDay * rates.daysPerMonth;
-  const basicAuxMonthlyGb = Math.max(0, input.basicAuxGbPerDay ?? 0) * rates.daysPerMonth;
-  const dataLakeMonthlyGb = Math.max(0, input.dataLakeGbPerDay ?? 0) * rates.daysPerMonth;
+  const basicAuxMonthlyGb = basicAuxGbPerDay * rates.daysPerMonth;
+  const dataLakeMonthlyGb = dataLakeGbPerDay * rates.daysPerMonth;
 
   const optPct = clamp(input.ingestionOptimizationPct ?? 0, 0, 1);
   const paygAnalyticsIngestion =
@@ -268,7 +309,6 @@ export function estimateMonthlyCost(input: SentinelCostInput): SentinelCostEstim
   let interactiveRetention: number;
   let dataStorage: number;
 
-  const perTable = input.tableRetention?.filter((t) => (t.gbPerDay ?? 0) > 0) ?? [];
   if (perTable.length > 0) {
     // Per-table retention: each table sets its own interactive + total window.
     let interactive = 0;
@@ -277,9 +317,12 @@ export function estimateMonthlyCost(input: SentinelCostInput): SentinelCostEstim
       const monthlyGb = Math.max(0, t.gbPerDay) * rates.daysPerMonth;
       const tInteractive = t.interactiveMonths ?? rates.freeInteractiveRetentionMonths;
       const tTotal = Math.max(t.totalMonths ?? tInteractive, tInteractive);
+      const lane = resolveTableLane(t);
       const paidInteractive = Math.max(0, tInteractive - rates.freeInteractiveRetentionMonths);
       const archiveMonths = Math.max(0, tTotal - tInteractive);
-      interactive += monthlyGb * paidInteractive * rates.interactiveRetentionPerGbMonth;
+      if (lane !== "dataLake") {
+        interactive += monthlyGb * paidInteractive * rates.interactiveRetentionPerGbMonth;
+      }
       archive += monthlyGb * archiveMonths * rates.dataStoragePerGbMonth;
     }
     interactiveRetention = interactive;

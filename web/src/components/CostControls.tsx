@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SentinelCostInput } from "@engine/pricing/sentinelPricing.js";
 import type { SentinelCostEstimate } from "@engine/pricing/sentinelPricing.js";
 import { DEFAULT_SENTINEL_RATES } from "@engine/pricing/index.js";
@@ -8,6 +8,8 @@ interface Props {
   input: SentinelCostInput;
   cost: SentinelCostEstimate;
   onChange: (patch: Partial<SentinelCostInput>) => void;
+  suggestedLaneProfile?: LaneProfile;
+  autoPlacementSeed?: string;
 }
 
 interface DefenderInventoryRow {
@@ -35,6 +37,9 @@ interface IngestionLaneRow {
   lane: "analytics" | "basicAux" | "dataLake";
   gbPerDay: number;
 }
+
+type LanePlanningMode = "guided" | "advanced";
+type LaneProfile = "detectionFirst" | "balanced" | "costFirst";
 
 function rate(n: number): string {
   if (n >= 1) return `$${n.toFixed(2)}`;
@@ -134,13 +139,24 @@ Usage
 | summarize GB = sum(Quantity) / 1024.0 by bin(TimeGenerated, 1d)
 | summarize FreeGBPerDay = round(avg(GB), 3)`;
 
-export default function CostControls({ input, cost, onChange }: Props) {
+export default function CostControls({
+  input,
+  cost,
+  onChange,
+  suggestedLaneProfile = "balanced",
+  autoPlacementSeed = "default",
+}: Props) {
   const b = input.benefits ?? {};
   const perTable = input.tableRetention != null;
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [m365Mode, setM365Mode] = useState<"inventory" | "query">("inventory");
   const [defenderMode, setDefenderMode] = useState<"inventory" | "query">("inventory");
   const [alwaysFreeMode, setAlwaysFreeMode] = useState<"inventory" | "query">("inventory");
+  const [lanePlanningMode, setLanePlanningMode] = useState<LanePlanningMode>("guided");
+  const [laneProfile, setLaneProfile] = useState<LaneProfile>("balanced");
+  const [whatIfShiftToBasicPct, setWhatIfShiftToBasicPct] = useState<number>(20);
+  const [whatIfShiftToLakePct, setWhatIfShiftToLakePct] = useState<number>(10);
+  const [whatIfOptimizationPct, setWhatIfOptimizationPct] = useState<number>(10);
   const [m365CostPerUser, setM365CostPerUser] = useState<number>(0);
   const [m365SkuRows, setM365SkuRows] = useState<M365SkuRow[]>([
     { label: "Microsoft 365 E5 / A5", users: 0 },
@@ -169,6 +185,7 @@ export default function CostControls({ input, cost, onChange }: Props) {
     { name: "Lower-fidelity searchable logs", lane: "basicAux", gbPerDay: 0 },
     { name: "Data lake only logs", lane: "dataLake", gbPerDay: 0 },
   ]);
+  const autoPlacementAppliedRef = useRef<string | null>(null);
 
   function setBenefit(patch: Partial<NonNullable<SentinelCostInput["benefits"]>>) {
     onChange({ benefits: { ...b, ...patch } });
@@ -274,6 +291,77 @@ export default function CostControls({ input, cost, onChange }: Props) {
   const defenderEstimatedMonthlyValue = defenderEstimatedFreeGbPerDay * cost.rates.daysPerMonth * cost.rates.analyticsIngestPerGb;
   const defenderMonthlyLicenseCost = Math.max(0, defenderNodes) * Math.max(0, defenderCostPerNode);
   const defenderNetMonthlyValue = defenderEstimatedMonthlyValue - defenderMonthlyLicenseCost;
+  const totalPlannedIngestGbPerDay =
+    Math.max(0, input.analyticsGbPerDay) +
+    Math.max(0, input.basicAuxGbPerDay ?? 0) +
+    Math.max(0, input.dataLakeGbPerDay ?? 0);
+
+  function profileSplit(profile: LaneProfile): { analytics: number; basicAux: number; dataLake: number } {
+    if (profile === "detectionFirst") {
+      return { analytics: 0.8, basicAux: 0.15, dataLake: 0.05 };
+    }
+    if (profile === "costFirst") {
+      return { analytics: 0.4, basicAux: 0.45, dataLake: 0.15 };
+    }
+    return { analytics: 0.6, basicAux: 0.3, dataLake: 0.1 };
+  }
+
+  function applyGuidedSplit(profile: LaneProfile) {
+    const total = totalPlannedIngestGbPerDay;
+    const split = profileSplit(profile);
+    onChange({
+      analyticsGbPerDay: Number((total * split.analytics).toFixed(3)),
+      basicAuxGbPerDay: Number((total * split.basicAux).toFixed(3)),
+      dataLakeGbPerDay: Number((total * split.dataLake).toFixed(3)),
+    });
+  }
+
+  useEffect(() => {
+    if (lanePlanningMode !== "guided") return;
+    if (autoPlacementAppliedRef.current === autoPlacementSeed) return;
+    const hasExistingAllocation =
+      Math.max(0, input.basicAuxGbPerDay ?? 0) > 0 || Math.max(0, input.dataLakeGbPerDay ?? 0) > 0;
+    if (hasExistingAllocation || Math.max(0, input.analyticsGbPerDay) <= 0) {
+      autoPlacementAppliedRef.current = autoPlacementSeed;
+      return;
+    }
+    setLaneProfile(suggestedLaneProfile);
+    const split = profileSplit(suggestedLaneProfile);
+    const total = Math.max(0, input.analyticsGbPerDay);
+    onChange({
+      analyticsGbPerDay: Number((total * split.analytics).toFixed(3)),
+      basicAuxGbPerDay: Number((total * split.basicAux).toFixed(3)),
+      dataLakeGbPerDay: Number((total * split.dataLake).toFixed(3)),
+    });
+    autoPlacementAppliedRef.current = autoPlacementSeed;
+  }, [
+    autoPlacementSeed,
+    suggestedLaneProfile,
+    lanePlanningMode,
+    input.analyticsGbPerDay,
+    input.basicAuxGbPerDay,
+    input.dataLakeGbPerDay,
+    onChange,
+  ]);
+
+  const baseAnalyticsGbPerDay = Math.max(0, input.analyticsGbPerDay);
+  const baseBasicAuxGbPerDay = Math.max(0, input.basicAuxGbPerDay ?? 0);
+  const baseDataLakeGbPerDay = Math.max(0, input.dataLakeGbPerDay ?? 0);
+  const maxShiftPct = Math.min(100, whatIfShiftToBasicPct + whatIfShiftToLakePct);
+  const shiftedFromAnalyticsGbPerDay = baseAnalyticsGbPerDay * (maxShiftPct / 100);
+  const scenarioAnalyticsPreOpt = Math.max(0, baseAnalyticsGbPerDay - shiftedFromAnalyticsGbPerDay);
+  const scenarioBasicAuxGbPerDay = baseBasicAuxGbPerDay + baseAnalyticsGbPerDay * (whatIfShiftToBasicPct / 100);
+  const scenarioDataLakeGbPerDay = baseDataLakeGbPerDay + baseAnalyticsGbPerDay * (whatIfShiftToLakePct / 100);
+  const scenarioAnalyticsGbPerDay = scenarioAnalyticsPreOpt * (1 - Math.max(0, Math.min(90, whatIfOptimizationPct)) / 100);
+  const scenarioIngestMonthly =
+    scenarioAnalyticsGbPerDay * cost.rates.daysPerMonth * cost.rates.analyticsIngestPerGb +
+    scenarioBasicAuxGbPerDay * cost.rates.daysPerMonth * cost.rates.basicIngestPerGb +
+    scenarioDataLakeGbPerDay * cost.rates.daysPerMonth * cost.rates.dataLakeIngestPerGb;
+  const baseIngestMonthly =
+    baseAnalyticsGbPerDay * cost.rates.daysPerMonth * cost.rates.analyticsIngestPerGb +
+    baseBasicAuxGbPerDay * cost.rates.daysPerMonth * cost.rates.basicIngestPerGb +
+    baseDataLakeGbPerDay * cost.rates.daysPerMonth * cost.rates.dataLakeIngestPerGb;
+  const scenarioMonthlyDelta = scenarioIngestMonthly - baseIngestMonthly;
 
   return (
     <div className="stack">
@@ -289,89 +377,235 @@ export default function CostControls({ input, cost, onChange }: Props) {
       </div>
 
       <div className="section-head">
-        <span className="eyebrow">Data lane breakdown (doc-aligned)</span>
+        <span className="eyebrow">1) Placement recommendation model</span>
       </div>
       <p className="ai-note">
-        Split your ingest by plan type based on Microsoft documentation: Analytics, Basic/Auxiliary,
-        and Data Lake-only retention.
+        For third-party SIEM migration, you often do not know final Sentinel table plans up front.
+        Start with guided allocation, then switch to advanced/manual as your mapping matures.
       </p>
+      <div className="segmented" role="tablist" aria-label="Data lane planning mode">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={lanePlanningMode === "guided"}
+          className={lanePlanningMode === "guided" ? "active" : ""}
+          onClick={() => setLanePlanningMode("guided")}
+        >
+          Guided migration (unknown buckets)
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={lanePlanningMode === "advanced"}
+          className={lanePlanningMode === "advanced" ? "active" : ""}
+          onClick={() => setLanePlanningMode("advanced")}
+        >
+          Advanced manual allocation
+        </button>
+      </div>
+
+      {lanePlanningMode === "guided" ? (
+        <>
+          <div className="field-row">
+            <div className="field">
+              <label htmlFor="lane-profile">Migration allocation profile</label>
+              <select
+                id="lane-profile"
+                value={laneProfile}
+                onChange={(e) => setLaneProfile(e.target.value as LaneProfile)}
+              >
+                <option value="detectionFirst">Detection-first (more Analytics)</option>
+                <option value="balanced">Balanced</option>
+                <option value="costFirst">Cost-first (more Basic/Data Lake)</option>
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="planned-total">Current planned ingest total (GB/day)</label>
+              <input id="planned-total" type="text" readOnly value={gbPerDay(totalPlannedIngestGbPerDay)} />
+            </div>
+          </div>
+          <div className="row">
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => applyGuidedSplit(laneProfile)}>
+              Apply guided allocation
+            </button>
+          </div>
+          <p className="ai-note">
+            This mode avoids forcing table-plan decisions too early. Refine with advanced mode later once
+            DCR/table mappings are validated during migration.
+          </p>
+          <p className="ai-note">
+            Suggested defaults by profile: detection-first (80/15/5), balanced (60/30/10),
+            cost-first (40/45/15) for Analytics/Basic-Aux/Data Lake.
+          </p>
+        </>
+      ) : (
+        <>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Data type / source</th>
+                  <th>Plan type</th>
+                  <th className="num">GB/day</th>
+                  <th aria-label="Remove row" />
+                </tr>
+              </thead>
+              <tbody>
+                {ingestionRows.map((r, i) => (
+                  <tr key={i}>
+                    <td>
+                      <input
+                        type="text"
+                        value={r.name}
+                        placeholder="Table or source category"
+                        onChange={(e) => setIngestionRow(i, { name: e.target.value })}
+                      />
+                    </td>
+                    <td>
+                      <select
+                        value={r.lane}
+                        onChange={(e) =>
+                          setIngestionRow(i, { lane: e.target.value as IngestionLaneRow["lane"] })
+                        }
+                      >
+                        <option value="analytics">Analytics</option>
+                        <option value="basicAux">Basic / Auxiliary</option>
+                        <option value="dataLake">Data Lake only</option>
+                      </select>
+                    </td>
+                    <td className="num">
+                      <input
+                        type="number"
+                        min={0}
+                        value={r.gbPerDay || ""}
+                        placeholder="0"
+                        onChange={(e) =>
+                          setIngestionRow(i, { gbPerDay: Math.max(0, Number(e.target.value) || 0) })
+                        }
+                      />
+                    </td>
+                    <td>
+                      {ingestionRows.length > 1 && (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => removeIngestionRow(i)}
+                          aria-label="Remove ingestion row"
+                        >
+                          x
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="row">
+            <button type="button" className="btn btn-secondary btn-sm" onClick={addIngestionRow}>
+              Add lane row
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() =>
+                onChange({
+                  analyticsGbPerDay: Number(ingestionAnalyticsGbPerDay.toFixed(3)),
+                  basicAuxGbPerDay: Number(ingestionBasicAuxGbPerDay.toFixed(3)),
+                  dataLakeGbPerDay: Number(ingestionDataLakeGbPerDay.toFixed(3)),
+                })
+              }
+            >
+              Use calculated lane totals
+            </button>
+          </div>
+        </>
+      )}
+
+      <div className="section-head">
+        <span className="eyebrow">2) What-if pricing model</span>
+      </div>
+      <p className="ai-note">
+        Test migration decisions before committing. Shift portions of current Analytics data into
+        lower-cost lanes and apply an optimization assumption, then compare cost impact.
+      </p>
+      <div className="field-row">
+        <div className="field">
+          <label htmlFor="whatif-basic">Shift Analytics to Basic/Aux (%)</label>
+          <input
+            id="whatif-basic"
+            type="number"
+            min={0}
+            max={100}
+            value={whatIfShiftToBasicPct}
+            onChange={(e) => setWhatIfShiftToBasicPct(Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="whatif-lake">Shift Analytics to Data Lake (%)</label>
+          <input
+            id="whatif-lake"
+            type="number"
+            min={0}
+            max={100}
+            value={whatIfShiftToLakePct}
+            onChange={(e) => setWhatIfShiftToLakePct(Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="whatif-opt">Optimization on remaining Analytics (%)</label>
+          <input
+            id="whatif-opt"
+            type="number"
+            min={0}
+            max={90}
+            value={whatIfOptimizationPct}
+            onChange={(e) => setWhatIfOptimizationPct(Math.max(0, Math.min(90, Number(e.target.value) || 0)))}
+          />
+        </div>
+      </div>
       <div className="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Data type / source</th>
-              <th>Plan type</th>
+              <th>Scenario lane result</th>
               <th className="num">GB/day</th>
-              <th aria-label="Remove row" />
             </tr>
           </thead>
           <tbody>
-            {ingestionRows.map((r, i) => (
-              <tr key={i}>
-                <td>
-                  <input
-                    type="text"
-                    value={r.name}
-                    placeholder="Table or source category"
-                    onChange={(e) => setIngestionRow(i, { name: e.target.value })}
-                  />
-                </td>
-                <td>
-                  <select
-                    value={r.lane}
-                    onChange={(e) =>
-                      setIngestionRow(i, { lane: e.target.value as IngestionLaneRow["lane"] })
-                    }
-                  >
-                    <option value="analytics">Analytics</option>
-                    <option value="basicAux">Basic / Auxiliary</option>
-                    <option value="dataLake">Data Lake only</option>
-                  </select>
-                </td>
-                <td className="num">
-                  <input
-                    type="number"
-                    min={0}
-                    value={r.gbPerDay || ""}
-                    placeholder="0"
-                    onChange={(e) =>
-                      setIngestionRow(i, { gbPerDay: Math.max(0, Number(e.target.value) || 0) })
-                    }
-                  />
-                </td>
-                <td>
-                  {ingestionRows.length > 1 && (
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => removeIngestionRow(i)}
-                      aria-label="Remove ingestion row"
-                    >
-                      x
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
+            <tr>
+              <td>Analytics (after shifts + optimization)</td>
+              <td className="num">{gbPerDay(scenarioAnalyticsGbPerDay)}</td>
+            </tr>
+            <tr>
+              <td>Basic / Auxiliary</td>
+              <td className="num">{gbPerDay(scenarioBasicAuxGbPerDay)}</td>
+            </tr>
+            <tr>
+              <td>Data Lake only</td>
+              <td className="num">{gbPerDay(scenarioDataLakeGbPerDay)}</td>
+            </tr>
+            <tr>
+              <td>Estimated ingest/month delta</td>
+              <td className="num">{scenarioMonthlyDelta === 0 ? "$0.00" : `${scenarioMonthlyDelta > 0 ? "+" : ""}${money(scenarioMonthlyDelta)}`}</td>
+            </tr>
           </tbody>
         </table>
       </div>
       <div className="row">
-        <button type="button" className="btn btn-secondary btn-sm" onClick={addIngestionRow}>
-          Add lane row
-        </button>
         <button
           type="button"
           className="btn btn-primary btn-sm"
           onClick={() =>
             onChange({
-              analyticsGbPerDay: Number(ingestionAnalyticsGbPerDay.toFixed(3)),
-              basicAuxGbPerDay: Number(ingestionBasicAuxGbPerDay.toFixed(3)),
-              dataLakeGbPerDay: Number(ingestionDataLakeGbPerDay.toFixed(3)),
+              analyticsGbPerDay: Number(scenarioAnalyticsGbPerDay.toFixed(3)),
+              basicAuxGbPerDay: Number(scenarioBasicAuxGbPerDay.toFixed(3)),
+              dataLakeGbPerDay: Number(scenarioDataLakeGbPerDay.toFixed(3)),
+              ingestionOptimizationPct: Math.max(0, Math.min(90, whatIfOptimizationPct)) / 100,
             })
           }
         >
-          Use calculated lane totals
+          Apply what-if scenario
         </button>
       </div>
 

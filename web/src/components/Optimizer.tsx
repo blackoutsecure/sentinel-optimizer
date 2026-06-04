@@ -23,6 +23,36 @@ const BASE_INPUT: SentinelCostInput = { analyticsGbPerDay: 0, regionId: DEFAULT_
 const IDLE_AI: AiState = { text: null, state: "idle", error: null };
 const DEFAULT_PROVENANCE: ExportProvenance = { mode: "query-export" };
 
+function inferLaneProfileFromAiText(text: string | null): "detectionFirst" | "balanced" | "costFirst" | null {
+  if (!text) return null;
+  const t = text.toLowerCase();
+
+  const costSignals = [
+    "cost-first",
+    "basic / auxiliary",
+    "basic/auxiliary",
+    "data lake",
+    "reduce spend",
+    "lower-cost",
+    "tiering",
+  ];
+  const detectionSignals = [
+    "detection-first",
+    "real-time detection",
+    "high-fidelity",
+    "keep in analytics",
+    "hot path",
+    "coverage first",
+  ];
+
+  const hasCost = costSignals.some((s) => t.includes(s));
+  const hasDetection = detectionSignals.some((s) => t.includes(s));
+
+  if (hasCost && !hasDetection) return "costFirst";
+  if (hasDetection && !hasCost) return "detectionFirst";
+  return null;
+}
+
 export default function Optimizer() {
   const [mode, setMode] = useState<Mode>("paste");
   const [vendor, setVendor] = useState<Vendor>("sentinel");
@@ -41,6 +71,8 @@ export default function Optimizer() {
     setCostInput((prev) => ({
       ...prev,
       analyticsGbPerDay: r.totals?.gbPerDay ?? 0,
+      basicAuxGbPerDay: undefined,
+      dataLakeGbPerDay: undefined,
       tableRetention: undefined,
     }));
   }
@@ -49,6 +81,18 @@ export default function Optimizer() {
     if (!result) return null;
     return estimateMonthlyCost(costInput);
   }, [result, costInput]);
+
+  const suggestedLaneProfile = useMemo<"detectionFirst" | "balanced" | "costFirst">(() => {
+    const aiSuggested = inferLaneProfileFromAiText(ai.text);
+    if (aiSuggested) return aiSuggested;
+    if (!result || !cost) return "balanced";
+    const recs = generateRecommendations({ result, cost, input: costInput });
+    const tiering = recs.find((r) => r.id === "tiering");
+    if (tiering && (tiering.severity === "high" || tiering.severity === "med")) return "costFirst";
+    const concentration = recs.find((r) => r.id === "concentration");
+    if (concentration?.severity === "high") return "detectionFirst";
+    return "balanced";
+  }, [result, cost, costInput, ai.text]);
 
   function patchInput(patch: Partial<SentinelCostInput>) {
     setCostInput((prev) => ({ ...prev, ...patch }));
@@ -137,7 +181,13 @@ export default function Optimizer() {
               <div className="panel panel-pad">
                 <RegionControls input={costInput} cost={cost} onChange={patchInput} />
                 <hr className="mt-sm" />
-                <CostControls input={costInput} cost={cost} onChange={patchInput} />
+                <CostControls
+                  input={costInput}
+                  cost={cost}
+                  onChange={patchInput}
+                  suggestedLaneProfile={suggestedLaneProfile}
+                  autoPlacementSeed={`${vendor}:${result.totals?.gbPerDay ?? 0}:${provenance.mode}`}
+                />
               </div>
               <div className="panel panel-pad">
                 <ResultsDashboard result={result} cost={cost} input={costInput} vendorLabel={vendorLabel} />

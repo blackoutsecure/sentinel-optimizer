@@ -29,6 +29,8 @@ function num(v: string): number | undefined {
   return Number.isFinite(n) && n >= 0 ? n : undefined;
 }
 
+type TableLane = "analytics" | "basicAux" | "dataLake" | "auto";
+
 export default function RetentionTable({ result, input, onChange }: Props) {
   const enabled = input.tableRetention != null;
 
@@ -41,6 +43,7 @@ export default function RetentionTable({ result, input, onChange }: Props) {
     return sources.map((s) => ({
       name: s.name,
       gbPerDay: s.gbPerDay ?? 0,
+      lane: "auto",
       interactiveMonths: DEFAULT_INTERACTIVE_MONTHS,
       totalMonths: DEFAULT_INTERACTIVE_MONTHS,
     }));
@@ -64,6 +67,15 @@ export default function RetentionTable({ result, input, onChange }: Props) {
         ...r,
         interactiveMonths: months,
         totalMonths: Math.max(r.totalMonths ?? months, months),
+      })),
+    });
+  }
+
+  function applyAllLane(lane: TableLane) {
+    onChange({
+      tableRetention: rows.map((r) => ({
+        ...r,
+        lane,
       })),
     });
   }
@@ -103,6 +115,21 @@ export default function RetentionTable({ result, input, onChange }: Props) {
               </button>
             ))}
           </div>
+          <div className="preset-row">
+            <span className="muted">Apply ingestion plan to all:</span>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => applyAllLane("auto")}>
+              Auto
+            </button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => applyAllLane("analytics")}>
+              Analytics
+            </button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => applyAllLane("basicAux")}>
+              Basic / Auxiliary
+            </button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => applyAllLane("dataLake")}>
+              Data Lake
+            </button>
+          </div>
 
           <div className="table-wrap">
             <table>
@@ -110,6 +137,7 @@ export default function RetentionTable({ result, input, onChange }: Props) {
               <thead>
                 <tr>
                   <th>Table / source</th>
+                  <th>Ingestion plan</th>
                   <th className="num">GB/day</th>
                   <th className="num">Interactive (months)</th>
                   <th className="num">Total incl. archive (months)</th>
@@ -122,6 +150,20 @@ export default function RetentionTable({ result, input, onChange }: Props) {
                   return (
                     <tr key={row.name}>
                       <td>{row.name}</td>
+                      <td>
+                        <select
+                          value={row.lane ?? "auto"}
+                          aria-label={`Ingestion plan for ${row.name}`}
+                          onChange={(e) =>
+                            patchRow(row.name, { lane: e.target.value as TableLane })
+                          }
+                        >
+                          <option value="auto">Auto (suggest)</option>
+                          <option value="analytics">Analytics</option>
+                          <option value="basicAux">Basic / Auxiliary</option>
+                          <option value="dataLake">Data Lake</option>
+                        </select>
+                      </td>
                       <td className="num">{gbPerDay(row.gbPerDay)}</td>
                       <td className="num">
                         <input
@@ -157,7 +199,9 @@ export default function RetentionTable({ result, input, onChange }: Props) {
           </div>
           <p className="ai-note">
             Interactive = fast query access (first 90 days free, then billed per GB·month). Total
-            beyond the interactive window is cheap long-term archive. Defaults to 90 days.
+            beyond the interactive window is cheap long-term archive. Ingestion plan controls where
+            the table is priced (Analytics, Basic/Aux, Data Lake). Auto uses retention-based
+            heuristics and can be overridden per table.
           </p>
         </>
       )}
