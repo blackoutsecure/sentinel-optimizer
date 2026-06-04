@@ -150,3 +150,23 @@ npm run typecheck # tsc --noEmit
 
 Parsers are pure and deterministic, and each vendor has a sample fixture in
 `samples/` plus a unit test in `test/`.
+
+## Branch hardening (dev and production)
+
+- `dev` is the integration branch for active changes.
+- `main` is the production/stable branch.
+
+To keep both paths shored up, this repo includes:
+
+- CI on both branches and their PRs: `.github/workflows/ci-dev-main.yml`
+  - Root engine: `npm ci`, `npm run typecheck`, `npm test`
+  - Web app: `web npm ci`, `npm run typecheck`, `npm run build`
+- Promotion safety gate: `.github/workflows/promotion-gate.yml`
+  - Validates that `main` is an ancestor of `dev` (fast-forwardable promotion path)
+  - Prevents unnoticed branch divergence before release promotion
+
+Recommended release flow:
+
+1. Merge feature work into `dev` only.
+2. Keep `dev` green via CI.
+3. Promote `dev` to `main` with a PR once the promotion gate passes.
