@@ -76,7 +76,7 @@ export default function Recommendations({
 
       <div className="ai-out">
         <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-          <strong>AI executive summary</strong>
+          <strong>AI summary</strong>
           <div className="row" style={{ gap: "0.5rem", alignItems: "center" }}>
             <label htmlFor="ai-style" className="ai-note" style={{ margin: 0 }}>
               Style

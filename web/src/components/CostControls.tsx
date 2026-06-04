@@ -357,10 +357,35 @@ export default function CostControls({
     scenarioAnalyticsGbPerDay * cost.rates.daysPerMonth * cost.rates.analyticsIngestPerGb +
     scenarioBasicAuxGbPerDay * cost.rates.daysPerMonth * cost.rates.basicIngestPerGb +
     scenarioDataLakeGbPerDay * cost.rates.daysPerMonth * cost.rates.dataLakeIngestPerGb;
+  const scenarioAnalyticsMonthlyGb = scenarioAnalyticsGbPerDay * cost.rates.daysPerMonth;
+  const scenarioBasicAuxMonthlyGb = scenarioBasicAuxGbPerDay * cost.rates.daysPerMonth;
+  const scenarioDataLakeMonthlyGb = scenarioDataLakeGbPerDay * cost.rates.daysPerMonth;
   const baseIngestMonthly =
     baseAnalyticsGbPerDay * cost.rates.daysPerMonth * cost.rates.analyticsIngestPerGb +
     baseBasicAuxGbPerDay * cost.rates.daysPerMonth * cost.rates.basicIngestPerGb +
     baseDataLakeGbPerDay * cost.rates.daysPerMonth * cost.rates.dataLakeIngestPerGb;
+  const baseRetentionMonthly = cost.breakdown.interactiveRetention + cost.breakdown.dataStorage;
+  const interactiveMonths = input.interactiveRetentionMonths ?? cost.rates.freeInteractiveRetentionMonths;
+  const storageMonths = input.dataStorageMonths ?? 12;
+  const paidInteractiveMonths = Math.max(0, interactiveMonths - cost.rates.freeInteractiveRetentionMonths);
+  const scenarioInteractiveRetentionMonthly =
+    perTable
+      ? cost.breakdown.interactiveRetention
+      : scenarioAnalyticsMonthlyGb * paidInteractiveMonths * cost.rates.interactiveRetentionPerGbMonth;
+  const scenarioDataStorageMonthly =
+    perTable
+      ? cost.breakdown.dataStorage
+      : (scenarioAnalyticsMonthlyGb + scenarioBasicAuxMonthlyGb + scenarioDataLakeMonthlyGb) *
+        storageMonths *
+        cost.rates.dataStoragePerGbMonth;
+  const scenarioRetentionMonthly = scenarioInteractiveRetentionMonthly + scenarioDataStorageMonthly;
+  const scenarioRetentionDelta = scenarioRetentionMonthly - baseRetentionMonthly;
+  const baseScenarioModeMonthly = baseIngestMonthly + baseRetentionMonthly;
+  const scenarioModeMonthly = scenarioIngestMonthly + scenarioRetentionMonthly;
+  const scenarioTotalDelta = scenarioModeMonthly - baseScenarioModeMonthly;
+  const analyticsDeltaGbPerDay = scenarioAnalyticsGbPerDay - baseAnalyticsGbPerDay;
+  const basicAuxDeltaGbPerDay = scenarioBasicAuxGbPerDay - baseBasicAuxGbPerDay;
+  const dataLakeDeltaGbPerDay = scenarioDataLakeGbPerDay - baseDataLakeGbPerDay;
   const scenarioMonthlyDelta = scenarioIngestMonthly - baseIngestMonthly;
 
   return (
@@ -568,30 +593,57 @@ export default function CostControls({
         <table>
           <thead>
             <tr>
-              <th>Scenario lane result</th>
-              <th className="num">GB/day</th>
+              <th>Baseline vs scenario</th>
+              <th className="num">Baseline</th>
+              <th className="num">Scenario</th>
+              <th className="num">Delta</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td>Analytics (after shifts + optimization)</td>
+              <td>Analytics lane (GB/day)</td>
+              <td className="num">{gbPerDay(baseAnalyticsGbPerDay)}</td>
               <td className="num">{gbPerDay(scenarioAnalyticsGbPerDay)}</td>
+              <td className="num">{analyticsDeltaGbPerDay === 0 ? "0.00 GB/day" : `${analyticsDeltaGbPerDay > 0 ? "+" : ""}${analyticsDeltaGbPerDay.toFixed(2)} GB/day`}</td>
             </tr>
             <tr>
-              <td>Basic / Auxiliary</td>
+              <td>Basic / Auxiliary lane (GB/day)</td>
+              <td className="num">{gbPerDay(baseBasicAuxGbPerDay)}</td>
               <td className="num">{gbPerDay(scenarioBasicAuxGbPerDay)}</td>
+              <td className="num">{basicAuxDeltaGbPerDay === 0 ? "0.00 GB/day" : `${basicAuxDeltaGbPerDay > 0 ? "+" : ""}${basicAuxDeltaGbPerDay.toFixed(2)} GB/day`}</td>
             </tr>
             <tr>
-              <td>Data Lake</td>
+              <td>Data Lake lane (GB/day)</td>
+              <td className="num">{gbPerDay(baseDataLakeGbPerDay)}</td>
               <td className="num">{gbPerDay(scenarioDataLakeGbPerDay)}</td>
+              <td className="num">{dataLakeDeltaGbPerDay === 0 ? "0.00 GB/day" : `${dataLakeDeltaGbPerDay > 0 ? "+" : ""}${dataLakeDeltaGbPerDay.toFixed(2)} GB/day`}</td>
             </tr>
             <tr>
-              <td>Estimated ingest/month delta</td>
+              <td>Ingestion cost/month</td>
+              <td className="num">{money(baseIngestMonthly)}</td>
+              <td className="num">{money(scenarioIngestMonthly)}</td>
               <td className="num">{scenarioMonthlyDelta === 0 ? "$0.00" : `${scenarioMonthlyDelta > 0 ? "+" : ""}${money(scenarioMonthlyDelta)}`}</td>
+            </tr>
+            <tr>
+              <td>Retention cost/month</td>
+              <td className="num">{money(baseRetentionMonthly)}</td>
+              <td className="num">{money(scenarioRetentionMonthly)}</td>
+              <td className="num">{scenarioRetentionDelta === 0 ? "$0.00" : `${scenarioRetentionDelta > 0 ? "+" : ""}${money(scenarioRetentionDelta)}`}</td>
+            </tr>
+            <tr>
+              <td>Scenario total/month (ingest + retention)</td>
+              <td className="num">{money(baseScenarioModeMonthly)}</td>
+              <td className="num">{money(scenarioModeMonthly)}</td>
+              <td className="num">{scenarioTotalDelta === 0 ? "$0.00" : `${scenarioTotalDelta > 0 ? "+" : ""}${money(scenarioTotalDelta)}`}</td>
             </tr>
           </tbody>
         </table>
       </div>
+      {perTable && (
+        <p className="ai-note">
+          Per-table retention is enabled, so scenario retention impact is held constant unless table retention or table-level lane plans are updated.
+        </p>
+      )}
       <div className="row">
         <button
           type="button"
@@ -691,7 +743,7 @@ export default function CostControls({
         Backend pricing shown from the active regional rate card and current model inputs.
         Source reference: {" "}
         <a
-          href="https://www.microsoft.com.office.prod.abbvie.myshn.net/en-us/security/pricing/microsoft-sentinel#section-master-oc2d43"
+          href="https://azure.microsoft.com/en-us/pricing/details/microsoft-sentinel/"
           target="_blank"
           rel="noopener noreferrer"
         >
