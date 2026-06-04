@@ -101,7 +101,7 @@ export default function Recommendations({
             <button
               type="button"
               className="btn btn-secondary btn-sm"
-              onClick={onEnhance}
+              onClick={() => onEnhance()}
               disabled={ai.state === "loading"}
             >
               {ai.state === "loading" ? "Generating..." : ai.text ? "Regenerate" : "Enhance with AI"}

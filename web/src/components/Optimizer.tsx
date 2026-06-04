@@ -75,7 +75,10 @@ export default function Optimizer() {
 
   async function enhance(styleOverride?: "executive" | "technical" | "board") {
     if (!result || !cost) return;
-    const styleToUse = styleOverride ?? aiStyle;
+    const styleToUse =
+      styleOverride === "executive" || styleOverride === "technical" || styleOverride === "board"
+        ? styleOverride
+        : aiStyle;
     setAi((prev) => ({ ...prev, state: "loading", error: null }));
     const recs = generateRecommendations({ result, cost, input: costInput });
     const summary = buildSummary({
