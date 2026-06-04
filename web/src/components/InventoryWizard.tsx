@@ -1,11 +1,12 @@
 import { useState } from "react";
 import type { NormalizedResult } from "@engine/schema/normalization.js";
 import { estimateDataVolume, DATA_SOURCE_CATALOG, rowGbPerDay } from "@engine/estimators/index.js";
+import type { ExportProvenance } from "../lib/exporters.js";
 import { INVENTORY_EXAMPLE } from "../lib/examples.js";
 import { gbPerDay } from "../lib/format.js";
 
 interface Props {
-  onEstimated: (result: NormalizedResult) => void;
+  onEstimated: (result: NormalizedResult, provenance: ExportProvenance) => void;
 }
 
 interface Row {
@@ -43,7 +44,10 @@ export default function InventoryWizard({ onEstimated }: Props) {
 
   function estimate() {
     const result = estimateDataVolume({ rows: rows.map((r) => ({ name: r.name, count: r.count })) });
-    onEstimated(result);
+    onEstimated(result, {
+      mode: "inventory-estimate",
+      inventoryRows: rows.map((r) => ({ name: r.name, count: r.count })),
+    });
   }
 
   return (

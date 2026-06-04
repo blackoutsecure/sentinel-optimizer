@@ -11,6 +11,7 @@
 import type { NormalizedResult } from "@engine/schema/normalization.js";
 import type {
   SentinelCostEstimate,
+  SentinelCostInput,
   SentinelCostBreakdown,
 } from "@engine/pricing/sentinelPricing.js";
 import type { Recommendation } from "./recommendations.js";
@@ -60,8 +61,23 @@ export interface ReportData {
   totalSavings: number;
   aiSummary?: string;
   aiModel?: string;
+  methodNotes: string[];
+  queryEvidence?: { language: string; text: string };
+  extractedRows: { name: string; gbPerDay: number; sharePct: number; bytes?: number; events?: number }[];
+  inputEvidence: string;
+  costInputJson: string;
   /** PNG data URLs captured from the on-page charts. */
   charts: { sources?: string; cost?: string };
+}
+
+export interface ExportProvenance {
+  mode: "query-export" | "inventory-estimate";
+  vendorId?: string;
+  queryLanguage?: string;
+  queryText?: string;
+  rawInputText?: string;
+  inventoryRows?: { name: string; count: number }[];
+  avgEventBytes?: number;
 }
 
 const usd0 = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
@@ -103,13 +119,15 @@ export function captureChart(containerId: string): string | undefined {
 export function buildReportData(args: {
   result: NormalizedResult;
   cost: SentinelCostEstimate;
+  input: SentinelCostInput;
+  provenance: ExportProvenance;
   vendorLabel: string;
   recommendations: Recommendation[];
   totalSavings: number;
   aiSummary?: string;
   aiModel?: string;
 }): ReportData {
-  const { result, cost, vendorLabel, recommendations, totalSavings } = args;
+  const { result, cost, input, provenance, vendorLabel, recommendations, totalSavings } = args;
   const totalGbPerDay =
     result.totals?.gbPerDay ?? result.sources.reduce((a, s) => a + (s.gbPerDay ?? 0), 0);
 
@@ -120,6 +138,41 @@ export function buildReportData(args: {
       sharePct: totalGbPerDay > 0 ? ((s.gbPerDay ?? 0) / totalGbPerDay) * 100 : 0,
     }))
     .sort((a, b) => b.gbPerDay - a.gbPerDay);
+
+  const extractedRows = [...result.sources]
+    .map((s) => ({
+      name: s.name,
+      gbPerDay: s.gbPerDay ?? 0,
+      sharePct: totalGbPerDay > 0 ? ((s.gbPerDay ?? 0) / totalGbPerDay) * 100 : 0,
+      ...(typeof s.bytes === "number" ? { bytes: s.bytes } : {}),
+      ...(typeof s.events === "number" ? { events: s.events } : {}),
+    }))
+    .sort((a, b) => b.gbPerDay - a.gbPerDay);
+
+  const methodNotes: string[] = [];
+  if (provenance.mode === "query-export") {
+    methodNotes.push(
+      `Input method: pasted/exported query results from ${vendorLabel}.`,
+      "Interpretation: parser normalized source rows to the canonical schema (name, bytes, events, GB/day).",
+    );
+    if (typeof provenance.avgEventBytes === "number" && provenance.avgEventBytes > 0) {
+      methodNotes.push(
+        `Some rows were event-count based; volume estimates used ${provenance.avgEventBytes} bytes/event where byte totals were not present.`,
+      );
+    }
+  } else {
+    methodNotes.push(
+      "Input method: inventory-based estimation (no source query output pasted).",
+      "Interpretation: GB/day was estimated from source-type defaults (event size + rate) multiplied by entered counts.",
+    );
+  }
+
+  const inputEvidenceRaw = provenance.mode === "query-export"
+    ? (provenance.rawInputText?.trim() || "No raw pasted/exported payload was captured in this run.")
+    : JSON.stringify(provenance.inventoryRows ?? [], null, 2);
+  const inputEvidence = inputEvidenceRaw.length > 24000
+    ? `${inputEvidenceRaw.slice(0, 24000)}\n\n[TRUNCATED] Input evidence exceeded 24,000 characters in this export.`
+    : inputEvidenceRaw;
 
   const breakdown = BREAKDOWN_LABELS.map((b) => ({
     label: b.label,
@@ -141,6 +194,13 @@ export function buildReportData(args: {
     totalSavings,
     ...(args.aiSummary ? { aiSummary: args.aiSummary } : {}),
     ...(args.aiModel ? { aiModel: args.aiModel } : {}),
+    methodNotes,
+    ...(provenance.queryText && provenance.queryLanguage
+      ? { queryEvidence: { language: provenance.queryLanguage, text: provenance.queryText } }
+      : {}),
+    extractedRows,
+    inputEvidence,
+    costInputJson: JSON.stringify(input, null, 2),
     charts: {
       sources: captureChart("export-chart-sources"),
       cost: captureChart("export-chart-cost"),
@@ -206,6 +266,32 @@ export async function exportPdf(data: ReportData): Promise<void> {
       doc.text(line, margin, y);
       y += size + 4;
     }
+  }
+
+  function codeBlock(title: string, text: string): void {
+    const lines = text.split(/\r?\n/);
+    const lineH = 9;
+    const pad = 8;
+    const blockH = Math.max(24, lines.length * lineH + pad * 2);
+    ensureSpace(blockH + 24);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(...grey);
+    doc.text(title, margin, y);
+    y += 8;
+    doc.setFillColor(243, 246, 251);
+    doc.roundedRect(margin, y, contentW, blockH, 4, 4, "F");
+    doc.setFont("courier", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(...ink);
+    let lineY = y + pad + 6;
+    for (const line of lines) {
+      if (lineY > y + blockH - 4) break;
+      const clipped = (doc.splitTextToSize(line, contentW - pad * 2) as string[])[0] ?? line;
+      doc.text(clipped, margin + pad, lineY);
+      lineY += lineH;
+    }
+    y += blockH + 14;
   }
 
   // ---- Title band ----
@@ -325,6 +411,47 @@ export async function exportPdf(data: ReportData): Promise<void> {
     }
   }
 
+  // ---- Appendix A: interpretation ----
+  heading("Appendix A — Interpretation and method");
+  for (const note of data.methodNotes) {
+    paragraph(`- ${note}`, 9, ink);
+  }
+
+  // ---- Appendix B: query evidence ----
+  heading("Appendix B — Query evidence");
+  if (data.queryEvidence) {
+    paragraph(`Query language: ${data.queryEvidence.language}`, 9, ink);
+    codeBlock("Query text", data.queryEvidence.text);
+  } else {
+    paragraph(
+      "This run did not use pasted query output. Data came from inventory estimation, so no source query was required.",
+      9,
+      ink,
+    );
+  }
+
+  // ---- Appendix C: extracted data ----
+  heading("Appendix C — Extracted data rows");
+  if (data.extractedRows.length) {
+    simpleTable(
+      ["Source", "GB/day", "Bytes", "Events"],
+      data.extractedRows.map((r) => [
+        r.name,
+        gbDay(r.gbPerDay),
+        typeof r.bytes === "number" ? `${Math.round(r.bytes)}` : "-",
+        typeof r.events === "number" ? `${Math.round(r.events)}` : "-",
+      ]),
+      [contentW * 0.44, contentW * 0.16, contentW * 0.2, contentW * 0.2],
+    );
+  } else {
+    paragraph("No normalized source rows were available.", 9, grey);
+  }
+
+  // ---- Appendix D: exact inputs used ----
+  heading("Appendix D — Data input and parameters used");
+  codeBlock("Cost model parameters (JSON)", data.costInputJson);
+  codeBlock("Input data used", data.inputEvidence);
+
   // ---- Disclaimer footer on every page ----
   const pages = doc.getNumberOfPages();
   for (let p = 1; p <= pages; p++) {
@@ -383,6 +510,45 @@ export async function exportPdf(data: ReportData): Promise<void> {
   }
 }
 
+/* ------------------------- Evidence JSON export ------------------------- */
+
+export function exportEvidenceJson(data: ReportData): void {
+  if (typeof document === "undefined") return;
+  const payload = {
+    generatedAt: data.generatedAt.toISOString(),
+    vendorLabel: data.vendorLabel,
+    summary: {
+      totalGbPerDay: data.totalGbPerDay,
+      monthlyCost: data.monthlyCost,
+      annualCost: data.annualCost,
+      billableAnalyticsGbPerDay: data.billableAnalyticsGbPerDay,
+      benefitGbPerDay: data.benefitGbPerDay,
+      estimatedMonthlyBenefitValue: data.estimatedMonthlyBenefitValue,
+      totalSavings: data.totalSavings,
+    },
+    methodNotes: data.methodNotes,
+    queryEvidence: data.queryEvidence,
+    extractedRows: data.extractedRows,
+    recommendations: data.recommendations,
+    aiSummary: data.aiSummary,
+    aiModel: data.aiModel,
+    costBreakdown: data.breakdown,
+    costInput: JSON.parse(data.costInputJson) as unknown,
+    inputEvidence: data.inputEvidence,
+    disclaimer: DISCLAIMER,
+  };
+  const json = `${JSON.stringify(payload, null, 2)}\n`;
+  const blob = new Blob([json], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `sentinel-optimizer-evidence-${fileSlug(data.vendorLabel)}-${stamp(data.generatedAt)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 /* -------------------------- PowerPoint export -------------------------- */
 
 export async function exportPptx(data: ReportData): Promise<void> {
@@ -397,6 +563,8 @@ export async function exportPptx(data: ReportData): Promise<void> {
 
   const W = 13.333;
   const H = 7.5;
+  const truncateForDeck = (text: string, max = 3200): string =>
+    text.length > max ? `${text.slice(0, max)}\n\n[TRUNCATED IN SLIDE PREVIEW]` : text;
 
   /** Branded header used on content slides. */
   function header(slide: PptxGenJS.Slide, title: string): void {
@@ -562,6 +730,159 @@ export async function exportPptx(data: ReportData): Promise<void> {
     if (data.aiModel) {
       slide.addText(`Model: ${data.aiModel}`, { x: 0.6, y: 6.1, w: W - 1.2, h: 0.3, color: BRAND.grey, fontSize: 9, fontFace: "Segoe UI" });
     }
+  }
+
+  // ---- Appendix A: interpretation ----
+  {
+    const slide = pptx.addSlide();
+    header(slide, "Appendix A — Interpretation and method");
+    const notes = data.methodNotes.map((n) => ({ text: n, options: {} }));
+    slide.addText(notes, {
+      x: 0.7,
+      y: 1.35,
+      w: W - 1.4,
+      h: 4.8,
+      color: BRAND.ink,
+      fontSize: 14,
+      bullet: { code: "2022", indent: 18 },
+      fontFace: "Segoe UI",
+      lineSpacingMultiple: 1.15,
+    });
+  }
+
+  // ---- Appendix B: query evidence ----
+  {
+    const slide = pptx.addSlide();
+    header(slide, "Appendix B — Query evidence");
+    if (data.queryEvidence) {
+      slide.addText(`Query language: ${data.queryEvidence.language}`, {
+        x: 0.7, y: 1.2, w: W - 1.4, h: 0.4, color: BRAND.navy, bold: true, fontSize: 14, fontFace: "Segoe UI",
+      });
+      slide.addShape(pptx.ShapeType.roundRect, {
+        x: 0.7,
+        y: 1.65,
+        w: W - 1.4,
+        h: 4.8,
+        fill: { color: BRAND.light },
+        line: { color: "D9E2EF", width: 1 },
+        rectRadius: 0.06,
+      });
+      slide.addText(truncateForDeck(data.queryEvidence.text), {
+        x: 0.9,
+        y: 1.85,
+        w: W - 1.8,
+        h: 4.35,
+        color: BRAND.ink,
+        fontSize: 10,
+        fontFace: "Consolas",
+        valign: "top",
+        breakLine: true,
+      });
+    } else {
+      slide.addText(
+        "No source query output was used in this run. Data came from inventory-based estimation.",
+        {
+          x: 0.7,
+          y: 1.6,
+          w: W - 1.4,
+          h: 1,
+          color: BRAND.ink,
+          fontSize: 14,
+          fontFace: "Segoe UI",
+        },
+      );
+    }
+  }
+
+  // ---- Appendix C: extracted data ----
+  if (data.extractedRows.length) {
+    const perSlide = 12;
+    for (let i = 0; i < data.extractedRows.length; i += perSlide) {
+      const chunk = data.extractedRows.slice(i, i + perSlide);
+      const slide = pptx.addSlide();
+      header(
+        slide,
+        i === 0
+          ? "Appendix C — Extracted data rows"
+          : "Appendix C — Extracted data rows (cont.)",
+      );
+      const rows: PptxGenJS.TableRow[] = [
+        [
+          { text: "Source", options: { bold: true, color: BRAND.white, fill: { color: BRAND.navy } } },
+          { text: "GB/day", options: { bold: true, color: BRAND.white, fill: { color: BRAND.navy }, align: "right" } },
+          { text: "Bytes", options: { bold: true, color: BRAND.white, fill: { color: BRAND.navy }, align: "right" } },
+          { text: "Events", options: { bold: true, color: BRAND.white, fill: { color: BRAND.navy }, align: "right" } },
+        ],
+        ...chunk.map((r): PptxGenJS.TableRow => [
+          { text: r.name, options: {} },
+          { text: gbDay(r.gbPerDay), options: { align: "right" } },
+          { text: typeof r.bytes === "number" ? `${Math.round(r.bytes)}` : "-", options: { align: "right" } },
+          { text: typeof r.events === "number" ? `${Math.round(r.events)}` : "-", options: { align: "right" } },
+        ]),
+      ];
+      slide.addTable(rows, {
+        x: 0.6,
+        y: 1.35,
+        w: W - 1.2,
+        fontSize: 10,
+        fontFace: "Segoe UI",
+        border: { type: "solid", color: "E2E8F2", pt: 1 },
+        colW: [6.6, 1.7, 2.2, 2.1],
+      });
+    }
+  }
+
+  // ---- Appendix D: inputs used ----
+  {
+    const slide = pptx.addSlide();
+    header(slide, "Appendix D — Inputs and parameters used");
+    slide.addText("Cost model parameters (JSON)", {
+      x: 0.7, y: 1.15, w: W - 1.4, h: 0.35, color: BRAND.navy, bold: true, fontSize: 13, fontFace: "Segoe UI",
+    });
+    slide.addShape(pptx.ShapeType.roundRect, {
+      x: 0.7,
+      y: 1.5,
+      w: W - 1.4,
+      h: 2.0,
+      fill: { color: BRAND.light },
+      line: { color: "D9E2EF", width: 1 },
+      rectRadius: 0.05,
+    });
+    slide.addText(truncateForDeck(data.costInputJson, 1400), {
+      x: 0.9,
+      y: 1.68,
+      w: W - 1.8,
+      h: 1.65,
+      color: BRAND.ink,
+      fontSize: 9,
+      fontFace: "Consolas",
+      valign: "top",
+      breakLine: true,
+    });
+
+    slide.addText("Data input used", {
+      x: 0.7, y: 3.75, w: W - 1.4, h: 0.35, color: BRAND.navy, bold: true, fontSize: 13, fontFace: "Segoe UI",
+    });
+    slide.addShape(pptx.ShapeType.roundRect, {
+      x: 0.7,
+      y: 4.1,
+      w: W - 1.4,
+      h: 2.85,
+      fill: { color: BRAND.light },
+      line: { color: "D9E2EF", width: 1 },
+      rectRadius: 0.05,
+    });
+    slide.addText(truncateForDeck(data.inputEvidence, 2400), {
+      x: 0.9,
+      y: 4.28,
+      w: W - 1.8,
+      h: 2.5,
+      color: BRAND.ink,
+      fontSize: 9,
+      fontFace: "Consolas",
+      valign: "top",
+      breakLine: true,
+    });
   }
 
   // ---- Closing ----

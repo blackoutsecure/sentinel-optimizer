@@ -6,6 +6,7 @@ import { DEFAULT_REGION_ID } from "@engine/pricing/regions.js";
 import type { Vendor } from "../lib/examples.js";
 import { buildSummary, requestAiSummary } from "../lib/aiClient.js";
 import { generateRecommendations } from "../lib/recommendations.js";
+import type { ExportProvenance } from "../lib/exporters.js";
 import DataInput from "./DataInput.js";
 import InventoryWizard from "./InventoryWizard.js";
 import CostControls from "./CostControls.js";
@@ -20,6 +21,7 @@ type Mode = "paste" | "wizard";
 
 const BASE_INPUT: SentinelCostInput = { analyticsGbPerDay: 0, regionId: DEFAULT_REGION_ID };
 const IDLE_AI: AiState = { text: null, state: "idle", error: null };
+const DEFAULT_PROVENANCE: ExportProvenance = { mode: "query-export" };
 
 export default function Optimizer() {
   const [mode, setMode] = useState<Mode>("paste");
@@ -28,10 +30,12 @@ export default function Optimizer() {
   const [vendorLabel, setVendorLabel] = useState("Microsoft Sentinel");
   const [costInput, setCostInput] = useState<SentinelCostInput>(BASE_INPUT);
   const [ai, setAi] = useState<AiState>(IDLE_AI);
+  const [provenance, setProvenance] = useState<ExportProvenance>(DEFAULT_PROVENANCE);
 
-  function adoptResult(r: NormalizedResult, label: string) {
+  function adoptResult(r: NormalizedResult, label: string, src: ExportProvenance) {
     setResult(r);
     setVendorLabel(label);
+    setProvenance(src);
     setAi(IDLE_AI);
     setCostInput((prev) => ({
       ...prev,
@@ -76,6 +80,7 @@ export default function Optimizer() {
     setVendor("sentinel");
     setResult(null);
     setVendorLabel("Microsoft Sentinel");
+    setProvenance(DEFAULT_PROVENANCE);
     setCostInput(BASE_INPUT);
     setAi(IDLE_AI);
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
@@ -112,10 +117,10 @@ export default function Optimizer() {
             <DataInput
               vendor={vendor}
               onVendorChange={setVendor}
-              onParsed={(r, label) => adoptResult(r, label)}
+              onParsed={(r, label, src) => adoptResult(r, label, src)}
             />
           ) : (
-            <InventoryWizard onEstimated={(r) => adoptResult(r, "Estimated (Sentinel)")} />
+            <InventoryWizard onEstimated={(r, src) => adoptResult(r, "Estimated (Sentinel)", src)} />
           )}
         </div>
       </section>
@@ -177,6 +182,7 @@ export default function Optimizer() {
                 cost={cost}
                 input={costInput}
                 vendorLabel={vendorLabel}
+                provenance={provenance}
                 aiSummary={ai.text}
                 {...(ai.model ? { aiModel: ai.model } : {})}
                 onReset={reset}

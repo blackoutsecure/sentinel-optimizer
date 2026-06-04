@@ -6,13 +6,14 @@ import {
   parseElastic,
   parseGeneric,
 } from "@engine/parsers/index.js";
+import type { ExportProvenance } from "../lib/exporters.js";
 import { VENDORS, type Vendor, type VendorMeta } from "../lib/examples.js";
 import { requestAiExample } from "../lib/aiClient.js";
 
 interface Props {
   vendor: Vendor;
   onVendorChange: (v: Vendor) => void;
-  onParsed: (result: NormalizedResult, vendorLabel: string) => void;
+  onParsed: (result: NormalizedResult, vendorLabel: string, provenance: ExportProvenance) => void;
 }
 
 /** Wrap a bare array of rows into the envelope a bespoke parser expects. */
@@ -60,7 +61,14 @@ export default function DataInput({ vendor, onVendorChange, onParsed }: Props) {
         setError("Parsed successfully, but found no data sources. Check the export format.");
         return;
       }
-      onParsed(result, meta.label);
+      onParsed(result, meta.label, {
+        mode: "query-export",
+        vendorId: meta.id,
+        queryLanguage: meta.queryLang,
+        queryText: meta.query,
+        rawInputText: trimmed,
+        ...(typeof meta.avgEventBytes === "number" ? { avgEventBytes: meta.avgEventBytes } : {}),
+      });
     } catch (e) {
       setError(`Couldn't parse that as ${meta.label} JSON: ${(e as Error).message}`);
     }
