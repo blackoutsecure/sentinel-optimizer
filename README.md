@@ -1,12 +1,38 @@
 # sentinel-optimizer
 
-**Universal SIEM Collector** — a zero-trust, client-side engine that parses log
-volume, connector metadata, and configuration exports from multiple SIEM
-vendors and normalizes them into a single schema for cost modeling, migration
-estimation, and optimization.
+SentinelOptimizer is a client-side analysis tool that helps organizations migrate to
+Microsoft Sentinel and optimize their data ingestion strategy. It evaluates log
+sources, tables, and event volumes to identify cost-saving opportunities, reduce
+noise, and streamline onboarding. No data ever leaves your browser.
 
 > Everything runs locally. The engine only parses JSON you provide — no
 > credentials, no uploads, no external calls.
+
+## Positioning copy
+
+- Enterprise-focused:
+  SentinelOptimizer accelerates your move to Microsoft Sentinel by providing a secure,
+  client-side assessment of your existing SIEM data. It maps ingestion patterns,
+  highlights unnecessary or high-cost data streams, and delivers actionable
+  recommendations to reduce spend and improve operational efficiency — all without
+  transmitting customer data.
+
+- Migration-focused:
+  SentinelOptimizer simplifies the transition to Microsoft Sentinel by analyzing your
+  current SIEM logs and identifying the optimal ingestion approach. It highlights
+  redundant, noisy, or high-cost data sources and provides guidance for structuring
+  your Sentinel workspace for performance and cost efficiency. All processing happens
+  locally in your browser.
+
+- Cost-optimization-focused:
+  SentinelOptimizer helps organizations cut Microsoft Sentinel costs by analyzing log
+  ingestion patterns and identifying waste, duplication, and unnecessary data. It
+  provides clear recommendations for tuning data connectors, table usage, and
+  retention settings — with all analysis performed securely on the client side.
+
+- Short description:
+  A privacy-preserving tool that helps you migrate to Microsoft Sentinel and optimize
+  your log ingestion for cost, clarity, and performance.
 
 ## Trust model
 
