@@ -85,20 +85,14 @@ export function buildSummary(args: {
  * deployment, in which case the deterministic recommendations still stand).
  */
 export async function requestAiSummary(summary: AggregatedSummary, signal?: AbortSignal): Promise<AiResult> {
-  const endpoint = resolveApiEndpoint("recommend");
-  let res: Response;
-  try {
-    res = await fetch(endpoint, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(summary),
-      ...(signal ? { signal } : {}),
-    });
-  } catch {
-    throw new Error(
-      `Could not reach the AI service at ${endpoint}. Your deterministic recommendations above are unaffected.`,
-    );
-  }
+  const endpoints = resolveApiEndpoints("recommend");
+  const req = {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(summary),
+    ...(signal ? { signal } : {}),
+  };
+  const res = await fetchWithFallback(endpoints, req, "Your deterministic recommendations above are unaffected.");
 
   if (res.status === 501 || res.status === 404) {
     throw new Error("AI enhancement isn't enabled for this deployment. The deterministic recommendations above are fully usable.");
@@ -128,18 +122,13 @@ export async function requestAiExample(
   req: { vendor: string; label: string; schemaHint: string; template: string },
   signal?: AbortSignal,
 ): Promise<string> {
-  const endpoint = resolveApiEndpoint("example");
-  let res: Response;
-  try {
-    res = await fetch(endpoint, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(req),
-      ...(signal ? { signal } : {}),
-    });
-  } catch {
-    throw new Error(`Could not reach the AI service at ${endpoint}.`);
-  }
+  const endpoints = resolveApiEndpoints("example");
+  const res = await fetchWithFallback(endpoints, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(req),
+    ...(signal ? { signal } : {}),
+  });
 
   if (res.status === 501 || res.status === 404) {
     throw new Error("AI example generation isn't enabled for this deployment.");
@@ -160,18 +149,29 @@ export async function requestAiExample(
  * 2) App base path + /api/* on the current origin
  */
 function resolveApiEndpoint(route: "recommend" | "example"): string {
-  const path = `api/${route}`;
+  return resolveApiEndpoints(route)[0] || `/${route}`;
+}
+
+function resolveApiEndpoints(route: "recommend" | "example"): string[] {
+  const absolutePath = `api/${route}`;
+  const rootRelative = `/api/${route}`;
+
+  const resolved = new Set<string>();
 
   if (CONFIGURED_AI_API_BASE) {
-    return new URL(path, ensureTrailingSlash(CONFIGURED_AI_API_BASE)).toString();
+    resolved.add(new URL(absolutePath, ensureTrailingSlash(CONFIGURED_AI_API_BASE)).toString());
   }
 
   if (typeof window !== "undefined") {
     const baseUrl = readBaseUrl();
-    return new URL(path, new URL(baseUrl, window.location.origin)).toString();
+    resolved.add(new URL(absolutePath, new URL(baseUrl, window.location.origin)).toString());
+    resolved.add(new URL(rootRelative, window.location.origin).toString());
+    resolved.add(rootRelative);
+    return [...resolved];
   }
 
-  return `/${path}`;
+  resolved.add(rootRelative);
+  return [...resolved];
 }
 
 function readConfiguredAiApiBase(): string | null {
@@ -186,4 +186,26 @@ function readBaseUrl(): string {
 
 function ensureTrailingSlash(value: string): string {
   return value.endsWith("/") ? value : `${value}/`;
+}
+
+async function fetchWithFallback(
+  endpoints: string[],
+  init: RequestInit,
+  suffix = "",
+): Promise<Response> {
+  let lastError: unknown;
+  for (const endpoint of endpoints) {
+    try {
+      return await fetch(endpoint, init);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  const detail =
+    lastError instanceof Error && lastError.message
+      ? ` ${lastError.name}: ${lastError.message}`
+      : "";
+  const tail = suffix ? ` ${suffix}` : "";
+  throw new Error(`Could not reach the AI service at ${endpoints.join(" or ")}.${detail}${tail}`);
 }
