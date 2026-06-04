@@ -26,11 +26,11 @@ function parseFor(meta: VendorMeta, raw: string): NormalizedResult {
   const json = JSON.parse(raw) as unknown;
   switch (meta.parser) {
     case "sentinel":
-      return parseSentinel(envelope(json, "usage") as Parameters<typeof parseSentinel>[0]);
+      return parseSentinel(envelope(json, "usage") as unknown as Parameters<typeof parseSentinel>[0]);
     case "splunk":
-      return parseSplunk(envelope(json, "results") as Parameters<typeof parseSplunk>[0]);
+      return parseSplunk(envelope(json, "results") as unknown as Parameters<typeof parseSplunk>[0]);
     case "elastic":
-      return parseElastic(envelope(json, "indices") as Parameters<typeof parseElastic>[0]);
+      return parseElastic(envelope(json, "indices") as unknown as Parameters<typeof parseElastic>[0]);
     case "generic":
       return parseGeneric(json as Parameters<typeof parseGeneric>[0], {
         vendor: meta.id,
