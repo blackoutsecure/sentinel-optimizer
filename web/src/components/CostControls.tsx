@@ -143,7 +143,7 @@ export default function CostControls({
   input,
   cost,
   onChange,
-  suggestedLaneProfile = "balanced",
+  suggestedLaneProfile = "costFirst",
   autoPlacementSeed = "default",
 }: Props) {
   const b = input.benefits ?? {};
@@ -153,7 +153,7 @@ export default function CostControls({
   const [defenderMode, setDefenderMode] = useState<"inventory" | "query">("inventory");
   const [alwaysFreeMode, setAlwaysFreeMode] = useState<"inventory" | "query">("inventory");
   const [lanePlanningMode, setLanePlanningMode] = useState<LanePlanningMode>("guided");
-  const [laneProfile, setLaneProfile] = useState<LaneProfile>("balanced");
+  const [laneProfile, setLaneProfile] = useState<LaneProfile>("costFirst");
   const [whatIfShiftToBasicPct, setWhatIfShiftToBasicPct] = useState<number>(20);
   const [whatIfShiftToLakePct, setWhatIfShiftToLakePct] = useState<number>(10);
   const [whatIfOptimizationPct, setWhatIfOptimizationPct] = useState<number>(10);
@@ -261,7 +261,7 @@ export default function CostControls({
     }
   }
 
-  const commitmentMode = input.commitmentTierMode ?? "off";
+  const commitmentMode = input.commitmentTierMode ?? "auto";
   const commitmentTiers = DEFAULT_SENTINEL_RATES.commitmentTiers;
   const ingestionAnalyticsGbPerDay = ingestionRows
     .filter((r) => r.lane === "analytics")

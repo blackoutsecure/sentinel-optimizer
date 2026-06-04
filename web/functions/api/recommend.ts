@@ -126,6 +126,7 @@ function buildPrompt(s: AggregatedSummary): string {
     `2) Persona-aware rationale: why a security leader should act now (cost, detection quality, operational control).`,
     `3) Migration recommendation: phased approach (pilot high-volume source, validate detections, then expand).`,
     `4) Enhancement recommendation: include DCR/workspace transformations, tiering, retention optimization, and commitment tier where relevant.`,
+    `4a) Cost optimization playbook: include a prioritized list of the top 3 cost actions (highest savings first) with expected impact and operational caution for each.`,
     `5) Worst-case fallback: if full migration cannot proceed now, recommend running Microsoft Sentinel in parallel with the current SIEM for a defined validation window, with explicit success criteria and cutover decision point.`,
     `6) Close with one sentence that figures are planning estimates and should be validated against actual billing and detection outcomes.`,
   ].join("\n");

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { NormalizedResult } from "@engine/schema/normalization.js";
 import type { SentinelCostInput } from "@engine/pricing/sentinelPricing.js";
 import { estimateMonthlyCost } from "@engine/pricing/index.js";
@@ -20,39 +20,13 @@ import ExportBar from "./ExportBar.js";
 
 type Mode = "paste" | "wizard";
 
-const BASE_INPUT: SentinelCostInput = { analyticsGbPerDay: 0, regionId: DEFAULT_REGION_ID };
+const BASE_INPUT: SentinelCostInput = {
+  analyticsGbPerDay: 0,
+  regionId: DEFAULT_REGION_ID,
+  commitmentTierMode: "auto",
+};
 const IDLE_AI: AiState = { text: null, state: "idle", error: null };
 const DEFAULT_PROVENANCE: ExportProvenance = { mode: "query-export" };
-
-function inferLaneProfileFromAiText(text: string | null): "detectionFirst" | "balanced" | "costFirst" | null {
-  if (!text) return null;
-  const t = text.toLowerCase();
-
-  const costSignals = [
-    "cost-first",
-    "basic / auxiliary",
-    "basic/auxiliary",
-    "data lake",
-    "reduce spend",
-    "lower-cost",
-    "tiering",
-  ];
-  const detectionSignals = [
-    "detection-first",
-    "real-time detection",
-    "high-fidelity",
-    "keep in analytics",
-    "hot path",
-    "coverage first",
-  ];
-
-  const hasCost = costSignals.some((s) => t.includes(s));
-  const hasDetection = detectionSignals.some((s) => t.includes(s));
-
-  if (hasCost && !hasDetection) return "costFirst";
-  if (hasDetection && !hasCost) return "detectionFirst";
-  return null;
-}
 
 export default function Optimizer() {
   const [mode, setMode] = useState<Mode>("paste");
@@ -78,24 +52,14 @@ export default function Optimizer() {
     }));
   }
 
-  const cost = useMemo(() => {
+  const cost = (() => {
     if (!result) return null;
     return estimateMonthlyCost(costInput);
-  }, [result, costInput]);
+  })();
 
-  const suggestedLaneProfile = useMemo<"detectionFirst" | "balanced" | "costFirst">(() => {
-    const aiSuggested = inferLaneProfileFromAiText(ai.text);
-    if (aiSuggested) return aiSuggested;
-    if (!result || !cost) return "balanced";
-    const recs = generateRecommendations({ result, cost, input: costInput });
-    const tiering = recs.find((r) => r.id === "tiering");
-    if (tiering && (tiering.severity === "high" || tiering.severity === "med")) return "costFirst";
-    const concentration = recs.find((r) => r.id === "concentration");
-    if (concentration?.severity === "high") return "detectionFirst";
-    return "balanced";
-  }, [result, cost, costInput, ai.text]);
+  const suggestedLaneProfile: "detectionFirst" | "balanced" | "costFirst" = "costFirst";
 
-  const providerComparison = useMemo(() => {
+  const providerComparison = (() => {
     if (!result || !cost) return null;
     const totalGbPerDay = result.totals?.gbPerDay ?? result.sources.reduce((a, s) => a + (s.gbPerDay ?? 0), 0);
     return buildProviderComparison({
@@ -103,7 +67,7 @@ export default function Optimizer() {
       totalGbPerDay,
       sentinelMonthlyModeledCost: cost.monthlyCost,
     });
-  }, [result, cost, vendor]);
+  })();
 
   function patchInput(patch: Partial<SentinelCostInput>) {
     setCostInput((prev) => ({ ...prev, ...patch }));
