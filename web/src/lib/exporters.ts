@@ -398,6 +398,11 @@ export async function exportPdf(data: ReportData): Promise<void> {
         y += 14;
       }
       paragraph(r.detail, 9, ink);
+      if (r.migrationExamples?.length) {
+        for (const ex of r.migrationExamples) {
+          paragraph(`- ${ex}`, 8.5, grey);
+        }
+      }
       y += 6;
     }
   }
@@ -712,7 +717,10 @@ export async function exportPptx(data: ReportData): Promise<void> {
           [
             { text: `${sev}${save}\n`, options: { fontSize: 10, bold: true, color: SEV[r.severity] ?? BRAND.grey } },
             { text: `${r.title}\n`, options: { fontSize: 14, bold: true, color: BRAND.navy } },
-            { text: r.detail, options: { fontSize: 10, color: BRAND.ink } },
+            {
+              text: `${r.detail}${r.migrationExamples?.length ? `\n• ${r.migrationExamples.join("\n• ")}` : ""}`,
+              options: { fontSize: 10, color: BRAND.ink },
+            },
           ],
           { x: 0.85, y: yy, w: W - 1.6, h: 1.25, valign: "top", fontFace: "Segoe UI", lineSpacingMultiple: 1.05 },
         );

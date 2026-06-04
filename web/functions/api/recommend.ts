@@ -15,6 +15,7 @@
 
 interface AggregatedSummary {
   vendor: string;
+  summaryStyle?: "executive" | "technical" | "board";
   totalGbPerDay: number;
   sourceCount: number;
   topSources: { name: string; sharePct: number }[];
@@ -57,6 +58,13 @@ function isAggregatedSummary(v: unknown): v is AggregatedSummary {
 }
 
 function buildPrompt(s: AggregatedSummary): string {
+  const style = s.summaryStyle ?? "executive";
+  const styleInstruction =
+    style === "technical"
+      ? "Style: technical leadership brief with concrete implementation language, explicit assumptions, and operational dependencies."
+      : style === "board"
+        ? "Style: board-ready narrative focused on risk, business impact, governance, and decision gates with minimal jargon."
+        : "Style: executive summary for CISO/SOC leadership with concise strategic framing and clear next steps.";
   const sources = s.topSources.map((t) => `- ${t.name}: ${t.sharePct}% of ingest`).join("\n");
   const breakdown = Object.entries(s.breakdown)
     .filter(([, v]) => v > 0)
@@ -67,8 +75,10 @@ function buildPrompt(s: AggregatedSummary): string {
     .join("\n");
 
   return [
-    `You are a Microsoft Sentinel cost-optimization advisor. Write a concise executive summary (120-180 words) for a security leader.`,
+    `You are a Microsoft Sentinel migration and cost-optimization advisor. Write a concise executive summary (170-260 words) for a security leader persona (CISO/SOC Director).`,
     `Use only the aggregated figures below. Do not invent specific log contents or customer names.`,
+    styleInstruction,
+    `Write in clear, plain business language with a confident but neutral tone.`,
     ``,
     `SIEM: ${s.vendor}`,
     `Total ingest: ${s.totalGbPerDay} GB/day across ${s.sourceCount} sources`,
@@ -81,7 +91,13 @@ function buildPrompt(s: AggregatedSummary): string {
     ``,
     `Detected opportunities:\n${recs || "- (none)"}`,
     ``,
-    `Write: 1) a one-sentence cost posture assessment, 2) the 2-3 highest-leverage actions with rationale, 3) a closing note that figures are planning estimates. Plain prose, no markdown headers.`,
+    `Write this exact flow in plain prose (no markdown headers):`,
+    `1) Story + posture: one sentence framing current state and risk/cost pressure.`,
+    `2) Persona-aware rationale: why a security leader should act now (cost, detection quality, operational control).`,
+    `3) Migration recommendation: phased approach (pilot high-volume source, validate detections, then expand).`,
+    `4) Enhancement recommendation: include DCR/workspace transformations, tiering, retention optimization, and commitment tier where relevant.`,
+    `5) Worst-case fallback: if full migration cannot proceed now, recommend running Microsoft Sentinel in parallel with the current SIEM for a defined validation window, with explicit success criteria and cutover decision point.`,
+    `6) Close with one sentence that figures are planning estimates and should be validated against actual billing and detection outcomes.`,
   ].join("\n");
 }
 
@@ -111,7 +127,11 @@ export const onRequestPost = async (ctx: { request: Request; env: Env }): Promis
   try {
     const out = await env.AI.run(model, {
       messages: [
-        { role: "system", content: "You are a precise, vendor-neutral cloud cost advisor." },
+        {
+          role: "system",
+          content:
+            "You are a precise, vendor-neutral cloud security and cost advisor. Optimize for executive clarity, migration practicality, and measurable outcomes.",
+        },
         { role: "user", content: buildPrompt(parsed) },
       ],
     });

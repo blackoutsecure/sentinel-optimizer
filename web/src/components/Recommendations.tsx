@@ -16,6 +16,8 @@ interface Props {
   input: SentinelCostInput;
   vendorLabel: string;
   ai: AiState;
+  aiStyle: "executive" | "technical" | "board";
+  onAiStyleChange: (style: "executive" | "technical" | "board") => void;
   onEnhance: () => void;
 }
 
@@ -25,7 +27,15 @@ const SEV_LABEL: Record<Recommendation["severity"], string> = {
   low: "Low",
 };
 
-export default function Recommendations({ result, cost, input, ai, onEnhance }: Props) {
+export default function Recommendations({
+  result,
+  cost,
+  input,
+  ai,
+  aiStyle,
+  onAiStyleChange,
+  onEnhance,
+}: Props) {
   const recs = generateRecommendations({ result, cost, input });
   const savings = totalSavings(recs);
 
@@ -52,6 +62,13 @@ export default function Recommendations({ result, cost, input, ai, onEnhance }: 
                 )}
               </div>
               <p>{r.detail}</p>
+              {r.migrationExamples && r.migrationExamples.length > 0 && (
+                <ul>
+                  {r.migrationExamples.map((item, idx) => (
+                    <li key={`${r.id}-example-${idx}`}>{item}</li>
+                  ))}
+                </ul>
+              )}
             </div>
           ))}
         </div>
@@ -60,14 +77,29 @@ export default function Recommendations({ result, cost, input, ai, onEnhance }: 
       <div className="ai-out">
         <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
           <strong>AI executive summary</strong>
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={onEnhance}
-            disabled={ai.state === "loading"}
-          >
-            {ai.state === "loading" ? "Generating…" : ai.text ? "Regenerate" : "Enhance with AI"}
-          </button>
+          <div className="row" style={{ gap: "0.5rem", alignItems: "center" }}>
+            <label htmlFor="ai-style" className="ai-note" style={{ margin: 0 }}>
+              Style
+            </label>
+            <select
+              id="ai-style"
+              value={aiStyle}
+              onChange={(e) => onAiStyleChange(e.target.value as "executive" | "technical" | "board")}
+              disabled={ai.state === "loading"}
+            >
+              <option value="executive">Executive</option>
+              <option value="technical">Technical</option>
+              <option value="board">Board-ready</option>
+            </select>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={onEnhance}
+              disabled={ai.state === "loading"}
+            >
+              {ai.state === "loading" ? "Generating..." : ai.text ? "Regenerate" : "Enhance with AI"}
+            </button>
+          </div>
         </div>
         <p className="ai-note">
           Optional. Sends only aggregated totals (GB/day, cost categories, recommendation titles) —

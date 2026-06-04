@@ -26,6 +26,8 @@ export interface Recommendation {
   severity: Severity;
   title: string;
   detail: string;
+  /** Optional implementation examples/checklist shown with the recommendation. */
+  migrationExamples?: string[];
   /** Estimated monthly USD savings, if quantifiable. */
   monthlySavings?: number;
 }
@@ -48,6 +50,93 @@ function isVerbose(name: string): boolean {
   return VERBOSE_HINTS.some((h) => n.includes(h));
 }
 
+type SourceFamily = "identity" | "firewallFlow" | "endpointServer" | "webProxy" | "dns" | "generic";
+
+function sourceFamilyLabel(family: SourceFamily): string {
+  if (family === "identity") return "Identity";
+  if (family === "firewallFlow") return "Firewall/Flow";
+  if (family === "endpointServer") return "Endpoint/Server";
+  if (family === "webProxy") return "Web/Proxy";
+  if (family === "dns") return "DNS";
+  return "Generic";
+}
+
+function classifySourceFamily(name: string): SourceFamily {
+  const n = name.toLowerCase();
+  if (
+    /(signinlogs|auditlogs|officeactivity|microsoft365|office365|cloudappevents|emailevents|\baad\b|entra)/.test(
+      n,
+    )
+  ) {
+    return "identity";
+  }
+  if (/(commonsecuritylog|firewall|netflow|flowlog|flow)/.test(n)) return "firewallFlow";
+  if (/(securityevent|windowsevent|sysmon|defender|md4iot|mde|protectionstatus|updatesummary)/.test(n)) {
+    return "endpointServer";
+  }
+  if (/(proxy|w3cidsiislog|iis|http|url)/.test(n)) return "webProxy";
+  if (/(dns|dnsquery)/.test(n)) return "dns";
+  return "generic";
+}
+
+function concentrationMigrationExamples(topSourceName: string): string[] {
+  const family = classifySourceFamily(topSourceName);
+  const base = [
+    "Migrate in phases: baseline 7 days, apply transforms to a non-critical table first, compare ingestion and alert counts, then expand.",
+    "If full cutover is risky, run Sentinel in parallel with your current SIEM for 2-4 weeks and use shared success criteria (coverage, latency, fidelity) before cutover.",
+  ];
+
+  if (family === "identity") {
+    return [
+      ...base,
+      "Identity example (column trim): source | project-away AppliedConditionalAccessPolicies, AuthenticationDetails, DeviceDetail",
+      "Identity example (schema-safe): source | project TimeGenerated, UserPrincipalName, AppDisplayName, IPAddress, ResultType, Location",
+    ];
+  }
+  if (family === "firewallFlow") {
+    return [
+      ...base,
+      "Firewall/flow example (column trim): source | project-away RawData, AdditionalExtensions, Message",
+      "Firewall/flow example (noise filter): source | where DeviceAction !in~ ('allow')",
+    ];
+  }
+  if (family === "endpointServer") {
+    return [
+      ...base,
+      "Endpoint/server example (column trim): source | project-away EventData, RenderedDescription",
+      "Endpoint/server example (event filter): source | where EventID !in (5156, 5158)",
+    ];
+  }
+  if (family === "webProxy") {
+    return [
+      ...base,
+      "Web/proxy example (column trim): source | project-away UserAgent, Referrer, Cookie",
+      "Web/proxy example (noise filter): source | where csUriStem !startswith '/health' and csUriStem !startswith '/metrics'",
+    ];
+  }
+  if (family === "dns") {
+    return [
+      ...base,
+      "DNS example (column trim): source | project-away AdditionalFields, RawData",
+      "DNS example (noise filter): source | where QueryType !in~ ('PTR')",
+    ];
+  }
+
+  return [
+    ...base,
+    "Generic column trim: source | project-away RawData, Payload, AdditionalFields",
+    "Generic row filter: source | where EventLevelName !in ('Informational', 'Verbose')",
+  ];
+}
+
+function optimizationMigrationExamples(): string[] {
+  return [
+    "Start with project-away trims before row drops to reduce risk to detections.",
+    "Validate each transform with a short parallel run and compare key detection rules before/after.",
+    "Keep TimeGenerated and required schema columns in the output to avoid ingestion issues.",
+  ];
+}
+
 export interface RecommendationContext {
   result: NormalizedResult;
   cost: SentinelCostEstimate;
@@ -68,14 +157,22 @@ export function generateRecommendations(ctx: RecommendationContext): Recommendat
   if (top && totalGbPerDay > 0) {
     const share = (top.gbPerDay ?? 0) / totalGbPerDay;
     if (share >= 0.4) {
+      const topFamily = classifySourceFamily(top.name);
+      const familyLabel = sourceFamilyLabel(topFamily);
       // Filtering 20% of the dominant source's analytics volume via DCR transforms.
       const savings = (top.gbPerDay ?? 0) * 0.2 * rates.daysPerMonth * rates.analyticsIngestPerGb;
       recs.push({
         id: "concentration",
         severity: share >= 0.6 ? "high" : "med",
-        title: `"${top.name}" drives ${(share * 100).toFixed(0)}% of your ingest`,
+        title:
+          topFamily === "generic"
+            ? `"${top.name}" drives ${(share * 100).toFixed(0)}% of your ingest`
+            : `"${top.name}" drives ${(share * 100).toFixed(0)}% of your ingest (${familyLabel} pattern)`,
         detail:
-          "A single source dominates volume. Apply a Data Collection Rule (DCR) transformation to drop noisy fields/events at ingestion — typically 15–30% reducible with no detection loss.",
+          topFamily === "generic"
+            ? "A single source dominates volume. Apply a Data Collection Rule (DCR) transformation to drop noisy fields/events at ingestion - typically 15-30% reducible with no detection loss."
+            : `Detected source family: ${familyLabel}. Apply a Data Collection Rule (DCR) transformation strategy tuned for this pattern to reduce ingest while preserving detection value - typically 15-30% reducible with no detection loss.`,
+        migrationExamples: concentrationMigrationExamples(top.name),
         monthlySavings: round(savings),
       });
     }
@@ -194,6 +291,7 @@ export function generateRecommendations(ctx: RecommendationContext): Recommendat
       title: "Filter at ingestion (workspace transformations)",
       detail:
         "Workspace/DCR transformations can drop verbose columns (e.g. raw payloads, redundant fields) and chatty event IDs before billing. A conservative 10% trim is usually achievable.",
+      migrationExamples: optimizationMigrationExamples(),
       monthlySavings: round(savings),
     });
   }

@@ -30,6 +30,7 @@ export default function Optimizer() {
   const [vendorLabel, setVendorLabel] = useState("Microsoft Sentinel");
   const [costInput, setCostInput] = useState<SentinelCostInput>(BASE_INPUT);
   const [ai, setAi] = useState<AiState>(IDLE_AI);
+  const [aiStyle, setAiStyle] = useState<"executive" | "technical" | "board">("executive");
   const [provenance, setProvenance] = useState<ExportProvenance>(DEFAULT_PROVENANCE);
 
   function adoptResult(r: NormalizedResult, label: string, src: ExportProvenance) {
@@ -59,6 +60,7 @@ export default function Optimizer() {
     const recs = generateRecommendations({ result, cost, input: costInput });
     const summary = buildSummary({
       vendor: vendorLabel,
+      summaryStyle: aiStyle,
       totalGbPerDay: result.totals?.gbPerDay ?? 0,
       sources: result.sources,
       monthlyCost: cost.monthlyCost,
@@ -170,6 +172,8 @@ export default function Optimizer() {
                 input={costInput}
                 vendorLabel={vendorLabel}
                 ai={ai}
+                aiStyle={aiStyle}
+                onAiStyleChange={setAiStyle}
                 onEnhance={enhance}
               />
             </div>

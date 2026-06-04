@@ -117,6 +117,8 @@ export interface SentinelCostInput {
   analyticsGbPerDay: number;
   /** Azure region / datacenter for pricing (drives region-aware rates). */
   regionId?: string;
+  /** Basic / Auxiliary logs ingestion, GB/day. */
+  basicAuxGbPerDay?: number;
   /** Data Lake ingestion, GB/day. */
   dataLakeGbPerDay?: number;
   /** Total interactive retention window in months. Defaults to the free window. */
@@ -248,13 +250,16 @@ export function estimateMonthlyCost(input: SentinelCostInput): SentinelCostEstim
 
   const billableAnalyticsMonthlyGb = billableAnalyticsGbPerDay * rates.daysPerMonth;
   const totalAnalyticsMonthlyGb = analyticsGbPerDay * rates.daysPerMonth;
+  const basicAuxMonthlyGb = Math.max(0, input.basicAuxGbPerDay ?? 0) * rates.daysPerMonth;
   const dataLakeMonthlyGb = Math.max(0, input.dataLakeGbPerDay ?? 0) * rates.daysPerMonth;
 
   const optPct = clamp(input.ingestionOptimizationPct ?? 0, 0, 1);
   const paygAnalyticsIngestion =
     billableAnalyticsMonthlyGb * rates.analyticsIngestPerGb * (1 - optPct);
   let analyticsIngestion = paygAnalyticsIngestion;
-  const dataLakeIngestion = dataLakeMonthlyGb * rates.dataLakeIngestPerGb;
+  const dataLakeIngestion =
+    basicAuxMonthlyGb * rates.basicIngestPerGb +
+    dataLakeMonthlyGb * rates.dataLakeIngestPerGb;
 
   const interactiveMonths =
     input.interactiveRetentionMonths ?? rates.freeInteractiveRetentionMonths;
@@ -288,7 +293,7 @@ export function estimateMonthlyCost(input: SentinelCostInput): SentinelCostEstim
     interactiveRetention =
       totalAnalyticsMonthlyGb * paidInteractiveMonths * rates.interactiveRetentionPerGbMonth;
     dataStorage =
-      (totalAnalyticsMonthlyGb + dataLakeMonthlyGb) *
+      (totalAnalyticsMonthlyGb + basicAuxMonthlyGb + dataLakeMonthlyGb) *
       storageMonths *
       rates.dataStoragePerGbMonth;
   }

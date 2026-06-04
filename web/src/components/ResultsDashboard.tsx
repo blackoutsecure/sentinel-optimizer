@@ -12,8 +12,10 @@ interface Props {
 export default function ResultsDashboard({ result, cost, input, vendorLabel }: Props) {
   const totalGbDay = result.totals?.gbPerDay ?? result.sources.reduce((a, s) => a + (s.gbPerDay ?? 0), 0);
   const sorted = [...result.sources].sort((a, b) => (b.gbPerDay ?? 0) - (a.gbPerDay ?? 0));
+  const basicAuxGbDay = Math.max(0, input.basicAuxGbPerDay ?? 0);
   const dataLakeGbDay = Math.max(0, input.dataLakeGbPerDay ?? 0);
   const analyticsMonthlyGb = Math.max(0, input.analyticsGbPerDay) * cost.rates.daysPerMonth;
+  const basicAuxMonthlyGb = basicAuxGbDay * cost.rates.daysPerMonth;
   const dataLakeMonthlyGb = dataLakeGbDay * cost.rates.daysPerMonth;
   const commitment = cost.commitment;
   const selectedOption = commitment?.options.find((o) => o.selected);
@@ -61,11 +63,18 @@ export default function ResultsDashboard({ result, cost, input, vendorLabel }: P
               <td className="num">{money(cost.breakdown.analyticsIngestion)}</td>
             </tr>
             <tr>
-              <td>Data Lake / Auxiliary</td>
+              <td>Basic / Auxiliary</td>
+              <td className="num">{gbPerDay(basicAuxGbDay)}</td>
+              <td className="num">{gb(basicAuxMonthlyGb)}</td>
+              <td className="num">${cost.rates.basicIngestPerGb.toFixed(3)}</td>
+              <td className="num">{money(basicAuxMonthlyGb * cost.rates.basicIngestPerGb)}</td>
+            </tr>
+            <tr>
+              <td>Data Lake only</td>
               <td className="num">{gbPerDay(dataLakeGbDay)}</td>
               <td className="num">{gb(dataLakeMonthlyGb)}</td>
               <td className="num">${cost.rates.dataLakeIngestPerGb.toFixed(3)}</td>
-              <td className="num">{money(cost.breakdown.dataLakeIngestion)}</td>
+              <td className="num">{money(dataLakeMonthlyGb * cost.rates.dataLakeIngestPerGb)}</td>
             </tr>
           </tbody>
         </table>

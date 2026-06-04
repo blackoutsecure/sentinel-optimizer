@@ -14,6 +14,7 @@ import type { Recommendation } from "./recommendations.js";
 /** The ONLY shape that crosses the network for AI enhancement. */
 export interface AggregatedSummary {
   vendor: string;
+  summaryStyle?: "executive" | "technical" | "board";
   totalGbPerDay: number;
   sourceCount: number;
   /** Top sources by GB/day — names + share only, no raw values/bytes. */
@@ -32,6 +33,7 @@ export interface AiResult {
 
 export function buildSummary(args: {
   vendor: string;
+  summaryStyle?: "executive" | "technical" | "board";
   totalGbPerDay: number;
   sources: { name: string; gbPerDay?: number }[];
   monthlyCost: number;
@@ -51,6 +53,7 @@ export function buildSummary(args: {
 
   return {
     vendor: args.vendor,
+    summaryStyle: args.summaryStyle ?? "executive",
     totalGbPerDay: round(args.totalGbPerDay),
     sourceCount: args.sources.length,
     topSources,
