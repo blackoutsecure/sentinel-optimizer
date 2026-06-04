@@ -150,6 +150,16 @@ h1, h2, h3 { font-family: var(--font-display); letter-spacing: 0.01em; line-heig
 .btn-secondary:hover { text-decoration: none; border-color: var(--accent); }
 .btn-ghost { background: transparent; color: var(--text-muted); border-color: var(--border); }
 .btn-ghost:hover { text-decoration: none; color: var(--text); border-color: var(--border-strong); }
+.btn-ai-example {
+  background: linear-gradient(100deg, var(--accent-2), var(--accent));
+  color: #04141a;
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--accent-2));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent), 0 8px 24px -10px color-mix(in srgb, var(--accent-2) 55%, transparent);
+}
+.btn-ai-example:hover {
+  text-decoration: none;
+  filter: brightness(1.08);
+}
 .btn-sm { padding: 0.4rem 0.7rem; font-size: 0.85rem; }
 .btn[disabled] { opacity: 0.55; cursor: not-allowed; }
 

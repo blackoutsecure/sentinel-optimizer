@@ -187,7 +187,7 @@ export default function DataInput({ vendor, onVendorChange, onParsed }: Props) {
         </button>
         <button
           type="button"
-          className="btn btn-ghost"
+          className="btn btn-ai-example"
           onClick={generateExample}
           disabled={generating}
         >
