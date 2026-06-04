@@ -2,6 +2,7 @@
 import Base from "../layouts/Base.astro";
 import ThemeToggle from "../components/ThemeToggle.tsx";
 import Optimizer from "../components/Optimizer.tsx";
+import Footer from "../components/Footer.astro";
 ---
 
 <Base>
@@ -43,12 +44,5 @@ import Optimizer from "../components/Optimizer.tsx";
     </div>
   </main>
 
-  <footer class="site-footer">
-    <div class="container">
-      <span>© {new Date().getFullYear()} BlackOut Secure · Sentinel Optimizer</span>
-      <span class="muted">
-        Estimates use public list pricing for planning only — not a quote.
-      </span>
-    </div>
-  </footer>
+  <Footer />
 </Base>

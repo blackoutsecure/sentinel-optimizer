@@ -17,25 +17,10 @@ import type {
 import type { Vendor } from "./examples.js";
 import type { Recommendation } from "./recommendations.js";
 import { buildProviderComparison, type ProviderComparisonModel } from "./providerComparison.js";
+import { BRAND } from "./brand.js";
 // Type-only import (erased at build time — does NOT bundle the library; the
 // runtime copy is pulled in via dynamic import() inside exportPptx).
 import type PptxGenJS from "pptxgenjs";
-
-/** Microsoft Sentinel template brand palette (hex, no leading #). */
-const BRAND = {
-  navy: "243A5E",
-  blue: "0078D4",
-  cyan: "50E6FF",
-  teal: "30E5D0",
-  green: "107C10",
-  lime: "9BF00B",
-  amber: "FFB900",
-  purple: "D59DFF",
-  ink: "1B1B1B",
-  grey: "737373",
-  light: "F3F6FB",
-  white: "FFFFFF",
-} as const;
 
 const BREAKDOWN_LABELS: { key: keyof SentinelCostBreakdown; label: string }[] = [
   { key: "analyticsIngestion", label: "Analytics ingest" },
@@ -242,10 +227,11 @@ export async function exportPdf(data: ReportData): Promise<void> {
   const contentW = pageW - margin * 2;
   let y = margin;
 
-  const navy: [number, number, number] = [36, 58, 94];
-  const blue: [number, number, number] = [0, 120, 212];
-  const ink: [number, number, number] = [27, 27, 27];
-  const grey: [number, number, number] = [115, 115, 115];
+  // Sentinel brand colors (RGB)
+  const navy: [number, number, number] = [36, 58, 94];          // #243A5E
+  const blue: [number, number, number] = [0, 120, 212];         // #0078D4
+  const ink: [number, number, number] = [27, 27, 27];           // #1B1B1B
+  const grey: [number, number, number] = [115, 115, 115];       // #737373
 
   function ensureSpace(needed: number): void {
     if (y + needed > pageH - margin) {
@@ -606,8 +592,8 @@ export async function exportPptx(data: ReportData): Promise<void> {
   const pptx = new PptxGen();
   pptx.defineLayout({ name: "WIDE", width: 13.333, height: 7.5 });
   pptx.layout = "WIDE";
-  pptx.author = "Sentinel Optimizer";
-  pptx.company = "Sentinel Optimizer (unofficial)";
+  pptx.author = BRAND.owner;
+  pptx.company = BRAND.name;
   pptx.title = "Microsoft Sentinel — cost optimization";
 
   const W = 13.333;
@@ -666,10 +652,10 @@ export async function exportPptx(data: ReportData): Promise<void> {
   const s3 = pptx.addSlide();
   header(s3, "Estimate summary");
   const cards: [string, string, string][] = [
-    ["Daily ingest", gbDay(data.totalGbPerDay), BRAND.blue],
+    ["Daily ingest", gbDay(data.totalGbPerDay), BRAND.teal],
     ["Est. monthly cost", money(data.monthlyCost), BRAND.navy],
     ["Est. annual cost", money(data.annualCost), BRAND.navy],
-    ["Billable analytics", gbDay(data.billableAnalyticsGbPerDay), BRAND.teal],
+    ["Billable analytics", gbDay(data.billableAnalyticsGbPerDay), BRAND.cyan],
     ["Covered by benefits", gbDay(data.benefitGbPerDay), BRAND.green],
     ["Savings identified", `${money(data.totalSavings)}/mo`, BRAND.amber],
   ];

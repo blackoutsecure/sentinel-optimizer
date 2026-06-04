@@ -48,8 +48,8 @@ const SOURCE_PALETTE = [
 
 export function SourceBreakdownChart({ result }: { result: NormalizedResult }) {
   const themeKey = useThemeKey();
-  const text = cssVar("--text-muted", "#9aa7b8");
-  const border = cssVar("--surface", "#0e131b");
+  const text = cssVar("--text-muted", "#b7b7b7");
+  const border = cssVar("--surface", "#1f2937");
 
   const sorted = [...result.sources]
     .filter((s) => (s.gbPerDay ?? 0) > 0)
@@ -59,7 +59,7 @@ export function SourceBreakdownChart({ result }: { result: NormalizedResult }) {
   const restGb = sorted.slice(7).reduce((a, s) => a + (s.gbPerDay ?? 0), 0);
   const labels = [...top.map((s) => s.name), ...(restGb > 0 ? ["Other"] : [])];
   const values = [...top.map((s) => s.gbPerDay ?? 0), ...(restGb > 0 ? [restGb] : [])];
-  const colors = labels.map((_, i) => cssVar(SOURCE_PALETTE[i % SOURCE_PALETTE.length]!, "#18d1c4"));
+  const colors = labels.map((_, i) => cssVar(SOURCE_PALETTE[i % SOURCE_PALETTE.length]!, "#30E5D0"));
 
   const data = {
     labels,
@@ -108,8 +108,8 @@ const BREAKDOWN_LABELS: { key: keyof SentinelCostBreakdown; label: string; color
 
 export function CostBreakdownChart({ breakdown }: { breakdown: SentinelCostBreakdown }) {
   const themeKey = useThemeKey();
-  const text = cssVar("--text-muted", "#9aa7b8");
-  const grid = cssVar("--border", "#232d3d");
+  const text = cssVar("--text-muted", "#b7b7b7");
+  const grid = cssVar("--border", "#4b5563");
 
   const present = BREAKDOWN_LABELS.filter((b) => (breakdown[b.key] ?? 0) > 0);
 
@@ -119,7 +119,7 @@ export function CostBreakdownChart({ breakdown }: { breakdown: SentinelCostBreak
       {
         label: "Monthly cost",
         data: present.map((b) => breakdown[b.key]),
-        backgroundColor: present.map((b) => cssVar(b.color, "#18d1c4")),
+        backgroundColor: present.map((b) => cssVar(b.color, "#30E5D0")),
         borderRadius: 6,
         maxBarThickness: 34,
       },
@@ -152,10 +152,10 @@ export function CostBreakdownChart({ breakdown }: { breakdown: SentinelCostBreak
 
 export function ProviderSpendComparisonChart({ comparison }: { comparison: ProviderComparisonModel }) {
   const themeKey = useThemeKey();
-  const text = cssVar("--text-muted", "#9aa7b8");
-  const grid = cssVar("--border", "#232d3d");
-  const sentinelColor = cssVar("--c-ingest", "#18d1c4");
-  const otherColor = cssVar("--c-retention", "#91a0b4");
+  const text = cssVar("--text-muted", "#b7b7b7");
+  const grid = cssVar("--border", "#4b5563");
+  const sentinelColor = cssVar("--c-ingest", "#30E5D0");
+  const otherColor = cssVar("--c-retention", "#243A5E");
 
   const top = comparison.rows.slice(0, 6).sort((a, b) => b.monthlyListSpend - a.monthlyListSpend);
   const data = {

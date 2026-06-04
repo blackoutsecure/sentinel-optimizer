@@ -2,78 +2,83 @@
    Sentinel Optimizer — design tokens + global styles
 
    Theme strategy: all colour/elevation values are CSS custom properties.
-   Dark is the brand default (BlackOut Secure). `[data-theme="light"]` and
-   `[data-theme="dark"]` override the palette; the no-FOUC inline script in the
-   layout sets `data-theme` on <html> before first paint.
+   Dark is the brand default. `[data-theme="light"]` and `[data-theme="dark"]`
+   override the palette; the no-FOUC inline script in the layout sets
+   `data-theme` on <html> before first paint.
    ============================================================================ */
 
 :root {
-  /* Brand + typography (theme-independent) */
-  --font-display: "Orbitron", system-ui, sans-serif;
-  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, monospace;
+  /* Brand + typography (theme-independent) — Microsoft Sentinel palette */
+  --font-display: "Segoe UI", system-ui, sans-serif;
+  --font-body: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, "Helvetica Neue", Roboto, Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
 
-  --radius-sm: 6px;
-  --radius: 12px;
-  --radius-lg: 18px;
+  --radius-sm: 4px;
+  --radius: 8px;
+  --radius-lg: 12px;
   --maxw: 1140px;
 
-  --accent: #18d1c4;
-  --accent-2: #6f8cff;
-  --accent-strong: #0fb5aa;
-  --danger: #ff5d6c;
-  --warn: #ffb454;
-  --ok: #46d68a;
+  /* Sentinel brand colors */
+  --sentinel-teal: #30E5D0;
+  --sentinel-navy: #243A5E;
+  --ms-blue: #0078D4;
 
-  /* Cost-breakdown category palette (stable across themes) */
-  --c-ingest: #18d1c4;
-  --c-lake: #6f8cff;
-  --c-retention: #b07cff;
-  --c-storage: #ffb454;
-  --c-search: #ff7eb6;
-  --c-soar: #46d68a;
-  --c-copilot: #ff5d6c;
-  --c-sap: #8a93a6;
+  --accent: var(--sentinel-teal);
+  --accent-2: var(--sentinel-navy);
+  --accent-strong: var(--sentinel-navy);
+  --danger: #a4262c;
+  --warn: #f7630c;
+  --ok: #107c10;
+
+  /* Cost-breakdown category palette (stable across themes) — Sentinel colors */
+  --c-ingest: var(--sentinel-teal);
+  --c-lake: var(--sentinel-navy);
+  --c-retention: #107c10;
+  --c-storage: #FFB900;
+  --c-search: #F25022;
+  --c-soar: #50E6FF;
+  --c-copilot: #a4262c;
+  --c-sap: #737373;
 }
 
-/* ---- Dark (default) ---- */
+/* ---- Dark (default brand theme) ---- */
 :root,
 [data-theme="dark"] {
   color-scheme: dark;
-  --bg: #07090d;
-  --bg-grad-1: #0a1620;
-  --bg-grad-2: #07090d;
-  --surface: #0e131b;
-  --surface-2: #141b26;
-  --surface-3: #1b2433;
-  --border: #232d3d;
-  --border-strong: #32405492;
-  --text: #e7edf5;
-  --text-muted: #9aa7b8;
-  --text-faint: #66738699;
+  --bg: #111827;
+  --bg-grad-1: #1a2442;
+  --bg-grad-2: #111827;
+  --surface: #1f2937;
+  --surface-2: #273447;
+  --surface-3: #374151;
+  --border: #4b5563;
+  --border-strong: #6b778899;
+  --text: #f3f2f1;
+  --text-muted: #b7b7b7;
+  --text-faint: #8090a399;
   --shadow: 0 10px 40px -12px rgba(0, 0, 0, 0.6);
-  --glow: 0 0 0 1px rgba(24, 209, 196, 0.25), 0 8px 30px -8px rgba(24, 209, 196, 0.25);
+  --glow: 0 0 0 1px rgba(48, 229, 208, 0.25), 0 8px 30px -8px rgba(48, 229, 208, 0.25);
 }
 
 /* ---- Light ---- */
 [data-theme="light"] {
   color-scheme: light;
-  --bg: #f5f7fb;
-  --bg-grad-1: #e8eefc;
-  --bg-grad-2: #f5f7fb;
-  --surface: #ffffff;
-  --surface-2: #f3f6fb;
-  --surface-3: #e9eef7;
-  --border: #dbe2ee;
-  --border-strong: #c3cddd;
-  --text: #14202e;
-  --text-muted: #51637a;
-  --text-faint: #8090a3;
-  --accent: #0c9e94;
-  --accent-2: #4663d8;
-  --accent-strong: #0a857d;
-  --shadow: 0 10px 30px -16px rgba(20, 32, 46, 0.25);
-  --glow: 0 0 0 1px rgba(12, 158, 148, 0.25), 0 8px 24px -10px rgba(12, 158, 148, 0.2);
+  --bg: #ffffff;
+  --bg-grad-1: #f0faf9;
+  --bg-grad-2: #ffffff;
+  --surface: #f8f9fb;
+  --surface-2: #f0f8f7;
+  --surface-3: #e6f4f2;
+  --border: #d0e8e5;
+  --border-strong: #b3d9d4;
+  --text: #1a1a1a;
+  --text-muted: #4a4a4a;
+  --text-faint: #8a9299;
+  --accent: var(--sentinel-teal);
+  --accent-2: var(--sentinel-navy);
+  --accent-strong: #1d2d48;
+  --shadow: 0 10px 30px -16px rgba(36, 58, 94, 0.15);
+  --glow: 0 0 0 1px rgba(48, 229, 208, 0.3), 0 8px 24px -10px rgba(48, 229, 208, 0.15);
 }
 
 * { box-sizing: border-box; }
