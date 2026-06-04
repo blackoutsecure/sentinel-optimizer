@@ -1,6 +1,8 @@
+import { useEffect, useState } from "react";
 import type { NormalizedResult } from "@engine/schema/normalization.js";
 import type { SentinelCostEstimate, SentinelCostInput } from "@engine/pricing/sentinelPricing.js";
 import { generateRecommendations, totalSavings, type Recommendation } from "../lib/recommendations.js";
+import { getAiSummaryEndpoint } from "../lib/aiClient.js";
 import { money } from "../lib/format.js";
 
 export interface AiState {
@@ -36,8 +38,13 @@ export default function Recommendations({
   onAiStyleChange,
   onEnhance,
 }: Props) {
+  const [aiEndpoint, setAiEndpoint] = useState<string>("(resolving...)");
   const recs = generateRecommendations({ result, cost, input });
   const savings = totalSavings(recs);
+
+  useEffect(() => {
+    setAiEndpoint(getAiSummaryEndpoint());
+  }, []);
 
   return (
     <div className="stack">
@@ -105,6 +112,7 @@ export default function Recommendations({
           Optional. Sends only aggregated totals (GB/day, cost categories, recommendation titles) —
           never your raw logs.
         </p>
+        {import.meta.env.DEV && <p className="ai-note">Debug: AI endpoint {aiEndpoint}</p>}
         {ai.state === "error" && ai.error && <div className="error-box">{ai.error}</div>}
         {ai.text && <div className="ai-body">{ai.text}</div>}
         {ai.text && ai.model && <p className="ai-note">Model: {ai.model}</p>}

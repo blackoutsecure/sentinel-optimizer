@@ -35,6 +35,18 @@ as `AI`**. Optionally set `AI_MODEL` to override the default model
 If the binding is absent, the function returns HTTP 501 and the UI falls back to
 its always-on deterministic recommendations.
 
+If the UI is not served from the same origin as the Pages Function (or you are
+running a local function endpoint), set `PUBLIC_AI_API_BASE` so the client can
+target the correct host:
+
+```sh
+cd web
+PUBLIC_AI_API_BASE="http://127.0.0.1:8788/" npm run dev
+```
+
+When this variable is unset, the client defaults to the app origin + base path
+(`BASE_URL`) and calls `/api/recommend` and `/api/example` there.
+
 ### Functions + static deploy
 
 Cloudflare Pages reads the `functions/` directory from the **working directory**

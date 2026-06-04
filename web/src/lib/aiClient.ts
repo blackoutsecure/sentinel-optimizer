@@ -11,6 +11,8 @@
 
 import type { Recommendation } from "./recommendations.js";
 
+const CONFIGURED_AI_API_BASE = readConfiguredAiApiBase();
+
 /** The ONLY shape that crosses the network for AI enhancement. */
 export interface AggregatedSummary {
   vendor: string;
@@ -29,6 +31,14 @@ export interface AggregatedSummary {
 export interface AiResult {
   text: string;
   model?: string;
+}
+
+export function getAiSummaryEndpoint(): string {
+  return resolveApiEndpoint("recommend");
+}
+
+export function getAiExampleEndpoint(): string {
+  return resolveApiEndpoint("example");
 }
 
 export function buildSummary(args: {
@@ -75,16 +85,19 @@ export function buildSummary(args: {
  * deployment, in which case the deterministic recommendations still stand).
  */
 export async function requestAiSummary(summary: AggregatedSummary, signal?: AbortSignal): Promise<AiResult> {
+  const endpoint = resolveApiEndpoint("recommend");
   let res: Response;
   try {
-    res = await fetch("/api/recommend", {
+    res = await fetch(endpoint, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(summary),
       ...(signal ? { signal } : {}),
     });
   } catch {
-    throw new Error("Could not reach the AI service. Your deterministic recommendations above are unaffected.");
+    throw new Error(
+      `Could not reach the AI service at ${endpoint}. Your deterministic recommendations above are unaffected.`,
+    );
   }
 
   if (res.status === 501 || res.status === 404) {
@@ -115,16 +128,17 @@ export async function requestAiExample(
   req: { vendor: string; label: string; schemaHint: string; template: string },
   signal?: AbortSignal,
 ): Promise<string> {
+  const endpoint = resolveApiEndpoint("example");
   let res: Response;
   try {
-    res = await fetch("/api/example", {
+    res = await fetch(endpoint, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(req),
       ...(signal ? { signal } : {}),
     });
   } catch {
-    throw new Error("Could not reach the AI service.");
+    throw new Error(`Could not reach the AI service at ${endpoint}.`);
   }
 
   if (res.status === 501 || res.status === 404) {
@@ -138,4 +152,38 @@ export async function requestAiExample(
   if (data.error) throw new Error(data.error);
   if (!data.text) throw new Error("AI service returned an empty example.");
   return data.text;
+}
+
+/**
+ * Compute the AI endpoint URL in this order:
+ * 1) PUBLIC_AI_API_BASE override (for split-host or local function dev)
+ * 2) App base path + /api/* on the current origin
+ */
+function resolveApiEndpoint(route: "recommend" | "example"): string {
+  const path = `api/${route}`;
+
+  if (CONFIGURED_AI_API_BASE) {
+    return new URL(path, ensureTrailingSlash(CONFIGURED_AI_API_BASE)).toString();
+  }
+
+  if (typeof window !== "undefined") {
+    const baseUrl = readBaseUrl();
+    return new URL(path, new URL(baseUrl, window.location.origin)).toString();
+  }
+
+  return `/${path}`;
+}
+
+function readConfiguredAiApiBase(): string | null {
+  const raw = (import.meta.env.PUBLIC_AI_API_BASE ?? "").trim();
+  return raw ? raw : null;
+}
+
+function readBaseUrl(): string {
+  const raw = (import.meta.env.BASE_URL ?? "/").trim();
+  return ensureTrailingSlash(raw || "/");
+}
+
+function ensureTrailingSlash(value: string): string {
+  return value.endsWith("/") ? value : `${value}/`;
 }
