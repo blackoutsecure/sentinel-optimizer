@@ -70,7 +70,7 @@ export default function ResultsDashboard({ result, cost, input, vendorLabel }: P
               <td className="num">{money(basicAuxMonthlyGb * cost.rates.basicIngestPerGb)}</td>
             </tr>
             <tr>
-              <td>Data Lake only</td>
+              <td>Data Lake</td>
               <td className="num">{gbPerDay(dataLakeGbDay)}</td>
               <td className="num">{gb(dataLakeMonthlyGb)}</td>
               <td className="num">${cost.rates.dataLakeIngestPerGb.toFixed(3)}</td>

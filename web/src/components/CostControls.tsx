@@ -183,7 +183,7 @@ export default function CostControls({
   const [ingestionRows, setIngestionRows] = useState<IngestionLaneRow[]>([
     { name: "High-fidelity detection logs", lane: "analytics", gbPerDay: 0 },
     { name: "Lower-fidelity searchable logs", lane: "basicAux", gbPerDay: 0 },
-    { name: "Data lake only logs", lane: "dataLake", gbPerDay: 0 },
+    { name: "Lower-cost long-retention logs", lane: "dataLake", gbPerDay: 0 },
   ]);
   const autoPlacementAppliedRef = useRef<string | null>(null);
 
@@ -470,7 +470,7 @@ export default function CostControls({
                       >
                         <option value="analytics">Analytics</option>
                         <option value="basicAux">Basic / Auxiliary</option>
-                        <option value="dataLake">Data Lake only</option>
+                        <option value="dataLake">Data Lake</option>
                       </select>
                     </td>
                     <td className="num">
@@ -582,7 +582,7 @@ export default function CostControls({
               <td className="num">{gbPerDay(scenarioBasicAuxGbPerDay)}</td>
             </tr>
             <tr>
-              <td>Data Lake only</td>
+              <td>Data Lake</td>
               <td className="num">{gbPerDay(scenarioDataLakeGbPerDay)}</td>
             </tr>
             <tr>
@@ -643,7 +643,7 @@ export default function CostControls({
           />
         </div>
         <div className="field">
-          <label htmlFor="lake">Data Lake only (GB/day)</label>
+          <label htmlFor="lake">Data Lake (GB/day)</label>
           <input
             id="lake"
             type="number"
@@ -679,7 +679,7 @@ export default function CostControls({
               <td className="num">{money(basicAuxMonthlyGb * cost.rates.basicIngestPerGb)}</td>
             </tr>
             <tr>
-              <td>Data Lake only</td>
+              <td>Data Lake</td>
               <td className="num">{gbPerDay(dataLakeGbDay)}</td>
               <td className="num">{rate(cost.rates.dataLakeIngestPerGb)}</td>
               <td className="num">{money(dataLakeMonthlyGb * cost.rates.dataLakeIngestPerGb)}</td>
